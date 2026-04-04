@@ -2,7 +2,7 @@ from typing import Any
 
 import httpx
 from openai import OpenAI
-from core.cli_output import print_box
+from core.cli_output import print_box, print_startup_banner
 from core.config_manager import load_agent_config
 from core.session_runner import run_until_no_tool_call
 from core.slash_commands import handle_slash_command
@@ -62,6 +62,11 @@ def main() -> None:
         api_key=config.api_key,
         base_url=config.base_url,
         http_client=httpx.Client(verify=False),
+    )
+    print_startup_banner(
+        model=config.model,
+        effort=config.effort,
+        directory=str(SKILL_MANAGER.workdir),
     )
 
     system_prompt = build_system_prompt(SKILL_MANAGER)
