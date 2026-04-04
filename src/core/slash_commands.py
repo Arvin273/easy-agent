@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from core.common_output import print_box
+from typing import Callable
+
+from core.cli_output import print_box
 from core.skill_manager import SkillManager
 
 
@@ -48,15 +50,32 @@ def print_available_skills(skill_manager: SkillManager) -> None:
     print_box("ai", "\n\n".join(blocks), title="Skills")
 
 
+def _handle_help(_: SkillManager) -> bool:
+    print_slash_commands()
+    return False
+
+
+def _handle_skills(skill_manager: SkillManager) -> bool:
+    print_available_skills(skill_manager)
+    return False
+
+
+def _handle_exit(_: SkillManager) -> bool:
+    return True
+
+
+COMMAND_HANDLERS: dict[str, Callable[[SkillManager], bool]] = {
+    "/help": _handle_help,
+    "/skills": _handle_skills,
+    "/exit": _handle_exit,
+}
+
+
 def handle_slash_command(query: str, skill_manager: SkillManager) -> bool:
     command = query.lower()
-    if command == "/help":
-        print_slash_commands()
-        return False
-    if command == "/skills":
-        print_available_skills(skill_manager)
-        return False
-    if command == "/exit":
-        return True
+    handler = COMMAND_HANDLERS.get(command)
+    if handler is not None:
+        return handler(skill_manager)
     print_box("error", f"Unknown slash command: {query}\n输入 /help 查看可用命令。", title="Error")
     return False
+

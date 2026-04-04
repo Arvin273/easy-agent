@@ -23,6 +23,8 @@ class SkillManager:
     def __init__(self, workdir: Path | None = None, home: Path | None = None) -> None:
         self.workdir = (workdir or Path.cwd()).resolve()
         self.home = (home or Path.home()).resolve()
+        self._skills_cache: list[SkillInfo] | None = None
+        self._cache_stamp: tuple[str, ...] | None = None
 
     def _candidate_roots(self) -> list[Path]:
         home_root = (self.home / ".agents" / "skills").resolve()
@@ -32,6 +34,23 @@ class SkillManager:
             if root not in roots:
                 roots.append(root)
         return roots
+
+    def _build_cache_stamp(self) -> tuple[str, ...]:
+        stamp: list[str] = []
+        for root in self._candidate_roots():
+            if not root.exists() or not root.is_dir():
+                stamp.append(f"{root}|missing")
+                continue
+            stamp.append(f"{root}|dir")
+            for skill_dir in sorted(item for item in root.iterdir() if item.is_dir()):
+                skill_file = skill_dir / SKILL_FILE_NAME
+                if not skill_file.exists() or not skill_file.is_file():
+                    continue
+                stat = skill_file.stat()
+                stamp.append(
+                    f"{skill_file}|{stat.st_mtime_ns}|{stat.st_size}"
+                )
+        return tuple(stamp)
 
     @staticmethod
     def _parse_skill_metadata(skill_file: Path, directory_name: str) -> tuple[str, str]:
@@ -99,7 +118,15 @@ class SkillManager:
 
         return (name or directory_name)[:120], description[:240]
 
-    def discover_skills(self) -> list[SkillInfo]:
+    def discover_skills(self, force_refresh: bool = False) -> list[SkillInfo]:
+        new_stamp = self._build_cache_stamp()
+        if (
+            not force_refresh
+            and self._skills_cache is not None
+            and self._cache_stamp == new_stamp
+        ):
+            return list(self._skills_cache)
+
         skills_by_key: dict[str, SkillInfo] = {}
 
         # home 先加载，cwd 后加载；同名时 cwd 覆盖 home
@@ -121,7 +148,10 @@ class SkillManager:
                         skill_file=skill_file,
                     )
                 )
-        return list(skills_by_key.values())
+        result = list(skills_by_key.values())
+        self._skills_cache = result
+        self._cache_stamp = new_stamp
+        return list(result)
 
     def build_system_section(self) -> str:
         skills = self.discover_skills()
@@ -163,6 +193,11 @@ class SkillManager:
     def get_handlers(self) -> dict[str, Callable[[dict[str, Any]], Any]]:
         return {"read_skill": self.run_read_skill}
 
+    def refresh(self) -> bool:
+        old_stamp = self._cache_stamp
+        self.discover_skills(force_refresh=True)
+        return old_stamp != self._cache_stamp
+
     def run_read_skill(self, arguments: dict[str, Any]) -> dict[str, str] | str:
         name = arguments.get("name")
         if not isinstance(name, str) or not name.strip():
@@ -191,3 +226,4 @@ class SkillManager:
                 except Exception as exc:
                     return f"Error: {exc}"
         return f"Error: Skill not found: {name.strip()}"
+

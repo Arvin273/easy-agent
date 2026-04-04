@@ -9,8 +9,8 @@ import httpx
 from dotenv import load_dotenv
 from openai import OpenAI
 
-from core.common_output import format_tool_call, print_box
-from core.common_resources import DEFAULT_MODEL, TOOL_HANDLERS, TOOLS, WORKDIR
+from core.cli_output import format_tool_call, print_box
+from core.builtin_tools import DEFAULT_MODEL, TOOL_HANDLERS, TOOLS, WORKDIR
 
 load_dotenv()
 
@@ -274,3 +274,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
