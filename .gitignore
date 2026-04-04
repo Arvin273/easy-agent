@@ -1,0 +1,7 @@
+.venv
+.jbeval
+.idea
+.env
+__pycache__
+*.egg-info
+
