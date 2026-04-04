@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import sys
 import threading
 from typing import Any, Callable
 
@@ -21,27 +22,74 @@ def normalize_tool_result(result: Any) -> tuple[str, str]:
     return text, text
 
 
-def run_with_working_counter(callable_obj: Callable[[], Any]) -> tuple[Any, int]:
-    stop_event = threading.Event()
+def _read_cancel_key_nonblocking() -> str | None:
+    if sys.platform.startswith("win"):
+        import msvcrt
+
+        if not msvcrt.kbhit():
+            return None
+        key = msvcrt.getwch()
+        if key == "\x1b":
+            return "esc"
+        return None
+
+    import select
+    import termios
+    import tty
+
+    if not sys.stdin.isatty():
+        return None
+
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    try:
+        tty.setcbreak(fd)
+        ready, _, _ = select.select([sys.stdin], [], [], 0)
+        if not ready:
+            return None
+        key = sys.stdin.read(1)
+        if key == "\x1b":
+            return "esc"
+        return None
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+
+def run_with_working_counter(callable_obj: Callable[[], Any]) -> tuple[Any | None, int, bool]:
+    done_event = threading.Event()
     working_color = COLORS.get("user", "")
     counter = {"seconds": 0}
+    result_holder: dict[str, Any] = {}
+    error_holder: dict[str, BaseException] = {}
 
-    def worker() -> None:
-        while not stop_event.wait(1):
+    def request_worker() -> None:
+        try:
+            result_holder["value"] = callable_obj()
+        except BaseException as exc:  # noqa: BLE001
+            error_holder["error"] = exc
+        finally:
+            done_event.set()
+
+    request_thread = threading.Thread(target=request_worker, daemon=True)
+    request_thread.start()
+
+    try:
+        while True:
+            if done_event.wait(1):
+                break
             counter["seconds"] += 1
             print(
-                f"\r{working_color}{THEME.body_indent}Generating {counter['seconds']}s...{RESET}",
+                f"\r{working_color}{THEME.body_indent}Generating {counter['seconds']}s... (Esc to cancel){RESET}",
                 end="",
                 flush=True,
             )
+            if _read_cancel_key_nonblocking() == "esc":
+                return None, max(1, counter["seconds"]), True
 
-    thread = threading.Thread(target=worker, daemon=True)
-    thread.start()
-    try:
-        return callable_obj(), max(1, counter["seconds"])
+        if "error" in error_holder:
+            raise error_holder["error"]
+        return result_holder.get("value"), max(1, counter["seconds"]), False
     finally:
-        stop_event.set()
-        thread.join(timeout=0.2)
         columns = shutil.get_terminal_size(fallback=(100, 20)).columns
         print(f"\r{' ' * max(1, columns - 1)}\r", end="", flush=True)
 
@@ -60,7 +108,6 @@ def print_response_items(
             text = getattr(summary_item, "text", "")
             if text:
                 print_box("reason", text, title="REASON")
-                history.append({"role": "assistant", "content": text})
 
     for item in response.output:
         if item.type != "message":
@@ -129,7 +176,7 @@ def run_until_no_tool_call(
     handlers: dict[str, Callable[[dict[str, Any]], Any]],
 ) -> None:
     while True:
-        response, elapsed_seconds = run_with_working_counter(
+        response, elapsed_seconds, cancelled = run_with_working_counter(
             lambda: client.responses.create(
                 model=model,
                 input=history,
@@ -137,6 +184,10 @@ def run_until_no_tool_call(
                 reasoning={"effort": effort, "summary": "auto"},
             )
         )
+        if cancelled:
+            print_box("user", "已中断本次生成（ESC）。", title="Interrupted")
+            return
+
         ai_title_suffix = f"Generating {elapsed_seconds}s..."
         tool_calls = print_response_items(
             response,
@@ -151,4 +202,3 @@ def run_until_no_tool_call(
             for index, tool_call in enumerate(tool_calls, start=1)
         ]
         history.extend(tool_outputs)
-

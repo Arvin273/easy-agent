@@ -40,7 +40,7 @@ class OutputTheme:
     width_ratio: float = 0.85
     min_width: int = 40
     max_width: int = 100
-    banner_max_width: int = 60
+    banner_max_width: int = 50
 
 
 THEME = OutputTheme()
@@ -56,6 +56,11 @@ def format_tool_call(tool_call: dict[str, Any]) -> str:
         args_text = json.dumps(args, ensure_ascii=False, indent=2)
     except TypeError:
         args_text = str(args)
+
+    arg_lines = args_text.splitlines()
+    if len(arg_lines) > 8:
+        hidden = len(arg_lines) - 8
+        args_text = "\n".join(arg_lines[:8] + [f"... ({hidden} more lines)"])
 
     return f"调用工具: {name}\n参数:\n{args_text}"
 
@@ -134,8 +139,8 @@ def print_startup_banner(model: str, effort: str, directory: str, version: str =
     border_color = COLORS.get("reason", "")
     text_color = COLORS.get("user", "")
 
-    line1 = f">- Easy Agent (v{version})"
-    line2 = f"model:     {model} {effort}"
+    line1 = f">_ Easy Agent (v{version})"
+    line2 = f"model:     {model} {effort}     /model to change"
     line3 = f"directory: {_display_directory(directory)}"
 
     # Very narrow terminals: degrade gracefully without a box.

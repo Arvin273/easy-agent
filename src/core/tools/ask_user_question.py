@@ -1,0 +1,248 @@
+import json
+import sys
+from typing import Any
+
+from core.cli_output import THEME, print_box
+
+
+def _read_selection_key() -> str:
+    if sys.platform.startswith("win"):
+        import msvcrt
+
+        while True:
+            key = msvcrt.getwch()
+            if key in ("\r", "\n"):
+                return "enter"
+            if key in ("\x00", "\xe0"):
+                arrow = msvcrt.getwch()
+                if arrow == "H":
+                    return "up"
+                if arrow == "P":
+                    return "down"
+                continue
+            if key.lower() == "k":
+                return "up"
+            if key.lower() == "j":
+                return "down"
+            if key == "\x03":
+                raise KeyboardInterrupt
+    else:
+        import termios
+        import tty
+
+        stdin = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(stdin)
+        try:
+            tty.setraw(stdin)
+            while True:
+                key = sys.stdin.read(1)
+                if key in ("\r", "\n"):
+                    return "enter"
+                if key == "\x1b":
+                    second = sys.stdin.read(1)
+                    third = sys.stdin.read(1)
+                    if second == "[" and third == "A":
+                        return "up"
+                    if second == "[" and third == "B":
+                        return "down"
+                    continue
+                if key.lower() == "k":
+                    return "up"
+                if key.lower() == "j":
+                    return "down"
+        finally:
+            termios.tcsetattr(stdin, termios.TCSADRAIN, old_settings)
+
+
+def _render_selection_prompt(options: list[str], selected: int) -> int:
+    lines: list[str] = []
+    for index, option in enumerate(options):
+        marker = ">" if index == selected else " "
+        lines.append(f"{THEME.body_indent}{marker} {option}")
+    text = "\n".join(lines)
+    print(text, flush=True)
+    return len(lines)
+
+
+def _move_cursor_up(lines: int) -> None:
+    if lines <= 0:
+        return
+    for _ in range(lines):
+        print("\x1b[1A\x1b[2K", end="", flush=True)
+
+
+def _select_option(options: list[str], default_index: int) -> int:
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        return default_index
+
+    selected = default_index
+    rendered_lines = _render_selection_prompt(options, selected)
+    while True:
+        key = _read_selection_key()
+        if key == "enter":
+            print()
+            return selected
+        if key == "up":
+            selected = (selected - 1) % len(options)
+        if key == "down":
+            selected = (selected + 1) % len(options)
+        _move_cursor_up(rendered_lines)
+        rendered_lines = _render_selection_prompt(options, selected)
+
+
+def _ask_single_question(
+    *,
+    title: str,
+    question_id: str,
+    question_text: str,
+    options: list[str],
+    default_index: int,
+    allow_custom_input: bool,
+) -> dict[str, Any]:
+    if default_index < 0 or default_index >= len(options):
+        raise ValueError("default_index 超出 options 范围。")
+
+    custom_option = "其他（自行输入）"
+    selectable_options = options + ([custom_option] if allow_custom_input else [])
+
+    print_box(
+        role="user",
+        title=title,
+        content=f"{question_text}\n",
+    )
+    selected_index = _select_option(
+        options=selectable_options,
+        default_index=default_index,
+    )
+
+    is_custom = allow_custom_input and selected_index == len(options)
+    if is_custom:
+        user_input = input(f"{THEME.body_indent}输入你的答案并回车: ")
+        return {
+            "id": question_id,
+            "question": question_text,
+            "selected_index": selected_index,
+            "selected_option": custom_option,
+            "is_custom": True,
+            "custom_input": user_input,
+            "answer": user_input,
+        }
+
+    selected_option = options[selected_index]
+    return {
+        "id": question_id,
+        "question": question_text,
+        "selected_index": selected_index,
+        "selected_option": selected_option,
+        "is_custom": False,
+        "custom_input": None,
+        "answer": selected_option,
+    }
+
+
+def run_ask_user_question(arguments: dict[str, Any]) -> dict[str, str]:
+    overall_title = arguments.get("title", "User Question")
+    questions = arguments.get("questions")
+
+    if not isinstance(overall_title, str) or not overall_title.strip():
+        raise ValueError("title 参数必须是非空字符串。")
+    if not isinstance(questions, list) or not questions:
+        raise ValueError("questions 参数必须是非空数组。")
+
+    normalized_questions: list[dict[str, Any]] = []
+    for idx, item in enumerate(questions, start=1):
+        if not isinstance(item, dict):
+            raise ValueError("questions 中每一项都必须是对象。")
+        question_text = item.get("question")
+        options = item.get("options")
+        default_index = item.get("default_index", 0)
+        allow_custom_input = item.get("allow_custom_input", True)
+        question_title = item.get("title") or f"{overall_title.strip()} #{idx}"
+        question_id = item.get("id") or f"q{idx}"
+
+        if not isinstance(question_text, str) or not question_text.strip():
+            raise ValueError("questions[].question 必须是非空字符串。")
+        if not isinstance(options, list) or not options:
+            raise ValueError("questions[].options 必须是非空字符串数组。")
+        if any(not isinstance(option, str) or not option.strip() for option in options):
+            raise ValueError("questions[].options 中每一项都必须是非空字符串。")
+        if len(options) > 20:
+            raise ValueError("questions[].options 最多支持 20 项。")
+        if not isinstance(default_index, int):
+            raise ValueError("questions[].default_index 必须是整数。")
+        if not isinstance(allow_custom_input, bool):
+            raise ValueError("questions[].allow_custom_input 必须是布尔值。")
+        if not isinstance(question_title, str) or not question_title.strip():
+            raise ValueError("questions[].title 必须是非空字符串。")
+        if not isinstance(question_id, str) or not question_id.strip():
+            raise ValueError("questions[].id 必须是非空字符串。")
+
+        normalized_questions.append(
+            {
+                "id": question_id.strip(),
+                "title": question_title.strip(),
+                "question": question_text.strip(),
+                "options": [opt.strip() for opt in options],
+                "default_index": default_index,
+                "allow_custom_input": allow_custom_input,
+            }
+        )
+
+    answers: list[dict[str, Any]] = []
+    for item in normalized_questions:
+        answer = _ask_single_question(
+            title=item["title"],
+            question_id=item["id"],
+            question_text=item["question"],
+            options=item["options"],
+            default_index=item["default_index"],
+            allow_custom_input=item["allow_custom_input"],
+        )
+        answers.append(answer)
+
+    display_lines = ["用户选择完毕："]
+    for answer in answers:
+        display_lines.append(f"- {answer['id']}: {answer['answer']}")
+    display_text = "\n".join(display_lines)
+    return {"output": display_text, "display_result": display_text}
+
+
+TOOL_NAME = "ask_user_question"
+TOOL_HANDLER = run_ask_user_question
+TOOL_DEF = {
+    "type": "function",
+    "name": TOOL_NAME,
+    "description": "当你在执行过程中需要向用户提问时，请使用此工具。它可以帮助你：1. 收集用户偏好或需求 2. 澄清有歧义的指令 3. 在工作过程中获取用户对实现方案的决定 4. 为用户提供可选方向，让其作出选择",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "title": {"type": "string", "description": "问题标题，默认 User Question"},
+                "questions": {
+                    "type": "array",
+                    "description": "问题列表（推荐使用）。",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string", "description": "题目 ID，用于结果映射；不传则自动生成"},
+                        "title": {"type": "string", "description": "该题的显示标题，不传则使用总标题+序号"},
+                        "question": {"type": "string", "description": "题干"},
+                        "options": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "候选项列表（至少 1 项，最多 20 项）",
+                        },
+                        "default_index": {"type": "integer", "description": "默认选中下标，默认 0"},
+                        "allow_custom_input": {
+                            "type": "boolean",
+                            "description": "是否追加“其他（自行输入）”选项，默认 true",
+                        },
+                    },
+                        "required": ["question", "options"],
+                        "additionalProperties": False,
+                    },
+                },
+        },
+        "required": ["questions"],
+        "additionalProperties": False,
+    },
+}

@@ -5,9 +5,9 @@ from openai import OpenAI
 from core.cli_output import print_box, print_startup_banner
 from core.config_manager import load_agent_config
 from core.session_runner import run_until_no_tool_call
-from core.slash_commands import handle_slash_command
+from core.commands import handle_slash_command
 from core.skill_manager import SkillManager
-from core.tool_registry import ToolRegistry
+from core.tools import ToolRegistry
 
 SKILL_MANAGER = SkillManager()
 TOOL_REGISTRY = ToolRegistry(SKILL_MANAGER)
@@ -19,6 +19,7 @@ def build_system_prompt(skill_manager: SkillManager) -> str:
         "你是一个agent。"
         "你可以调用工具来解决问题。"
         "在调用工具时，务必生成一段文字来说明你要做什么。"
+        "当你不确定下一步该怎么做时，优先调用 ask_user_question 向用户提问并等待选择。"
     )
     if skill_section:
         return f"{system_prompt}\n\n{skill_section}"
@@ -89,6 +90,10 @@ def main() -> None:
             should_exit = handle_slash_command(query, SKILL_MANAGER)
             if should_exit:
                 break
+            try:
+                config = load_agent_config()
+            except Exception as exc:
+                print_box("error", f"配置重载失败: {exc}", title="Config Error")
             continue
 
         history.append({"role": "user", "content": query})
