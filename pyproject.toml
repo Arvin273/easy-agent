@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "my_agent"
+name = "easy-agent"
 version = "0.0.2"
 description = "Add your description here"
 requires-python = ">=3.12"
@@ -12,7 +12,7 @@ dependencies = [
 ]
 
 [project.scripts]
-myagent = "core.agent_loop:main"
+ea = "core.agent_loop:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

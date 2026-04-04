@@ -40,7 +40,7 @@ class OutputTheme:
     width_ratio: float = 0.85
     min_width: int = 40
     max_width: int = 100
-    banner_max_width: int = 40
+    banner_max_width: int = 60
 
 
 THEME = OutputTheme()
@@ -134,7 +134,7 @@ def print_startup_banner(model: str, effort: str, directory: str, version: str =
     border_color = COLORS.get("reason", "")
     text_color = COLORS.get("user", "")
 
-    line1 = f">- My Agent (v{version})"
+    line1 = f">- Easy Agent (v{version})"
     line2 = f"model:     {model} {effort}"
     line3 = f"directory: {_display_directory(directory)}"
 
