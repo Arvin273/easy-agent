@@ -1,8 +1,10 @@
 import json
 import os
+import random
 import shutil
 import sys
 import textwrap
+from importlib import metadata as importlib_metadata
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -24,6 +26,7 @@ COLORS = {
     "error": "\033[31m" if ANSI_ENABLED else "",
     "user": "\033[36m" if ANSI_ENABLED else "",
     "reason": "\033[90m" if ANSI_ENABLED else "",
+    "white": "\033[37m" if ANSI_ENABLED else "",
 }
 
 ROLE_LABELS = {
@@ -47,6 +50,43 @@ class OutputTheme:
 
 
 THEME = OutputTheme()
+SLASH_HINTS = (
+    "/help 查看可用命令",
+    "/skills 查看已安装技能",
+    "/model 切换模型与推理强度",
+    "/exit 退出会话",
+)
+
+
+def _resolve_version(default: str = "0.0.2") -> str:
+    package_name = "easy-agent"
+    try:
+        return importlib_metadata.version(package_name)
+    except importlib_metadata.PackageNotFoundError:
+        pass
+    except Exception:
+        return default
+
+
+def _random_slash_hint() -> str:
+    return random.choice(SLASH_HINTS)
+
+    pyproject_path = Path(__file__).resolve().parents[3] / "pyproject.toml"
+    if not pyproject_path.exists():
+        return default
+
+    try:
+        import tomllib  # py>=3.11
+    except Exception:
+        return default
+
+    try:
+        with pyproject_path.open("rb") as f:
+            data = tomllib.load(f)
+        version = data.get("project", {}).get("version")
+        return str(version) if version else default
+    except Exception:
+        return default
 
 
 def format_tool_call(tool_call: dict[str, Any]) -> str:
@@ -142,27 +182,52 @@ def _display_directory(path_text: str) -> str:
         return path_text
 
 
-def print_startup_banner(model: str, effort: str, directory: str, version: str = "0.0.2") -> None:
+def print_startup_banner(model: str, effort: str, directory: str, version: str | None = None) -> None:
+    display_version = (version or "").strip() or _resolve_version()
     columns = shutil.get_terminal_size(fallback=(100, 20)).columns
     available_width = max(20, columns - len(THEME.body_indent))
-    box_width = min(THEME.banner_max_width, available_width)
+    box_width = min(max(THEME.banner_max_width, 64), available_width)
     inner_width = max(10, box_width - 4)
     border_color = COLORS.get("reason", "")
-    text_color = COLORS.get("user", "")
+    accent_color = COLORS.get("ai", "")
+    key_color = COLORS.get("reason", "")
+    value_color = COLORS.get("white", "")
 
-    line1 = f">_ Easy Agent (v{version})"
-    line2 = f"model:     {model} {effort}     /model to change"
-    line3 = f"directory: {_display_directory(directory)}"
+    title = "Easy Agent"
+    subtitle = f"v{display_version}"
+    line1 = f"{title:<22} {subtitle}"
+    detail_lines = (
+        ("Model", f"{model} ({effort})"),
+        ("Path", _display_directory(directory)),
+        ("Hint", _random_slash_hint()),
+    )
 
     if box_width < 16:
-        for line in (line1, line2, line3):
+        for key, value in detail_lines:
+            line = f"{key:<5}: {value}"
             print(f"{THEME.body_indent}{line}")
         print()
         return
 
-    print(f"{THEME.body_indent}{border_color}┌{'─' * (box_width - 2)}┐{RESET}")
-    for line in (line1, "", line2, line3):
-        display = line[:inner_width].ljust(inner_width)
-        print(f"{THEME.body_indent}{border_color}│{RESET} {text_color}{display}{RESET} {border_color}│{RESET}")
-    print(f"{THEME.body_indent}{border_color}└{'─' * (box_width - 2)}┘{RESET}")
+    top_border = f"┌{'═' * (box_width - 2)}┐"
+    divider = f"├{'─' * (box_width - 2)}┤"
+    bottom_border = f"└{'═' * (box_width - 2)}┘"
+
+    print(f"{THEME.body_indent}{border_color}{top_border}{RESET}")
+    display = line1[:inner_width].ljust(inner_width)
+    print(f"{THEME.body_indent}{border_color}│{RESET} {accent_color}{display}{RESET} {border_color}│{RESET}")
+    print(f"{THEME.body_indent}{border_color}{divider}{RESET}")
+
+    for key, value in detail_lines:
+        key_text = f"{key:<5}: "
+        key_part = key_text[:inner_width]
+        value_space = max(0, inner_width - len(key_part))
+        value_part = str(value)[:value_space]
+        line_pad = max(0, inner_width - len(key_part) - len(value_part))
+        print(
+            f"{THEME.body_indent}{border_color}│{RESET} "
+            f"{key_color}{key_part}{RESET}{value_color}{value_part}{RESET}{' ' * line_pad} "
+            f"{border_color}│{RESET}"
+        )
+    print(f"{THEME.body_indent}{border_color}{bottom_border}{RESET}")
     print()
