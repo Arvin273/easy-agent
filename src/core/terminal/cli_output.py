@@ -4,6 +4,7 @@ import random
 import shutil
 import sys
 import textwrap
+import unicodedata
 from importlib import metadata as importlib_metadata
 from dataclasses import dataclass
 from pathlib import Path
@@ -67,10 +68,6 @@ def _resolve_version(default: str = "0.0.2") -> str:
     except Exception:
         return default
 
-
-def _random_slash_hint() -> str:
-    return random.choice(SLASH_HINTS)
-
     pyproject_path = Path(__file__).resolve().parents[3] / "pyproject.toml"
     if not pyproject_path.exists():
         return default
@@ -87,6 +84,37 @@ def _random_slash_hint() -> str:
         return str(version) if version else default
     except Exception:
         return default
+
+
+def _random_slash_hint() -> str:
+    return random.choice(SLASH_HINTS)
+
+
+def _char_display_width(ch: str) -> int:
+    if unicodedata.combining(ch):
+        return 0
+    # CJK/Wide/Full-width chars usually occupy 2 columns in terminal.
+    if unicodedata.east_asian_width(ch) in {"W", "F"}:
+        return 2
+    return 1
+
+
+def _display_width(text: str) -> int:
+    return sum(_char_display_width(ch) for ch in text)
+
+
+def _fit_display_width(text: str, max_width: int) -> tuple[str, int]:
+    if max_width <= 0:
+        return "", 0
+    out: list[str] = []
+    width = 0
+    for ch in str(text):
+        ch_w = _char_display_width(ch)
+        if width + ch_w > max_width:
+            break
+        out.append(ch)
+        width += ch_w
+    return "".join(out), width
 
 
 def format_tool_call(tool_call: dict[str, Any]) -> str:
@@ -214,16 +242,17 @@ def print_startup_banner(model: str, effort: str, directory: str, version: str |
     bottom_border = f"└{'═' * (box_width - 2)}┘"
 
     print(f"{THEME.body_indent}{border_color}{top_border}{RESET}")
-    display = line1[:inner_width].ljust(inner_width)
+    display, display_w = _fit_display_width(line1, inner_width)
+    display = display + (" " * max(0, inner_width - display_w))
     print(f"{THEME.body_indent}{border_color}│{RESET} {accent_color}{display}{RESET} {border_color}│{RESET}")
     print(f"{THEME.body_indent}{border_color}{divider}{RESET}")
 
     for key, value in detail_lines:
         key_text = f"{key:<5}: "
-        key_part = key_text[:inner_width]
-        value_space = max(0, inner_width - len(key_part))
-        value_part = str(value)[:value_space]
-        line_pad = max(0, inner_width - len(key_part) - len(value_part))
+        key_part, key_w = _fit_display_width(key_text, inner_width)
+        value_space = max(0, inner_width - key_w)
+        value_part, value_w = _fit_display_width(str(value), value_space)
+        line_pad = max(0, inner_width - key_w - value_w)
         print(
             f"{THEME.body_indent}{border_color}│{RESET} "
             f"{key_color}{key_part}{RESET}{value_color}{value_part}{RESET}{' ' * line_pad} "
