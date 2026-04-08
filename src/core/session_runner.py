@@ -10,6 +10,11 @@ from typing import Any, Callable
 from openai import OpenAI
 
 import core.tools.bash as bash_tool
+from core.context.compression import (
+    compact_history,
+    estimate_tokens,
+    micro_compact,
+)
 from core.terminal.cli_output import (
     COLORS,
     RESET,
@@ -20,15 +25,22 @@ from core.terminal.cli_output import (
 )
 
 
-def normalize_tool_result(result: Any) -> tuple[str, str]:
+def normalize_tool_result(result: Any) -> str:
     if isinstance(result, str):
-        return result, result
+        return result
     if isinstance(result, dict):
         output = result.get("output", "")
-        display_result = result.get("display_result", output)
-        return str(output), str(display_result)
-    text = str(result)
-    return text, text
+        return str(output)
+    return str(result)
+
+
+def _format_tool_output_preview(output: str, max_lines: int = 10) -> str:
+    lines = output.splitlines()
+    if len(lines) <= max_lines:
+        return output
+    hidden = len(lines) - max_lines
+    preview_lines = lines[:max_lines] + [f"... ({hidden} more lines)"]
+    return "\n".join(preview_lines)
 
 
 def _read_cancel_key_nonblocking() -> str | None:
@@ -231,7 +243,7 @@ def run_tool_call(
         else:
             result = result_holder.get("value")
 
-    output, display_result = normalize_tool_result(result)
+    output = normalize_tool_result(result)
     if str(output) == "工具已中断":
         print_stream_text("reason", "工具已中断\n\n")
         return {
@@ -239,8 +251,9 @@ def run_tool_call(
             "call_id": tool_call.call_id,
             "output": "工具已中断",
         }
-    if tool_name != "bash" and str(display_result or "").strip():
-        print_stream_text("reason", f"{display_result}\n")
+    if tool_name != "bash" and str(output).strip():
+        preview = _format_tool_output_preview(str(output), max_lines=10)
+        print_stream_text("reason", f"{preview}\n")
         print()
     return {
         "type": "function_call_output",
@@ -253,11 +266,26 @@ def run_until_no_tool_call(
     client: OpenAI,
     model: str,
     effort: str,
+    token_threshold: int,
+    keep_recent_tool_outputs: int,
+    min_compact_output_length: int,
     history: list[dict[str, Any] | Any],
     tools: list[dict[str, Any]],
     handlers: dict[str, Callable[[dict[str, Any]], Any]],
 ) -> None:
     while True:
+        # Layer 1: lightweight compaction before each model call.
+        micro_compact(
+            history,
+            keep_recent_tool_outputs=keep_recent_tool_outputs,
+            min_compact_output_length=min_compact_output_length,
+        )
+        # Layer 2: auto-compaction by token threshold.
+        if estimate_tokens(history) > token_threshold:
+            print_stream_text("reason", "Compacting...\n")
+            history[:] = compact_history(client=client, model=model, history=history)
+            print_stream_text("reason", "Compacted\n\n")
+
         response, elapsed_seconds, cancelled = run_with_working_counter(
             lambda: client.responses.create(
                 model=model,
@@ -279,10 +307,30 @@ def run_until_no_tool_call(
         if not tool_calls:
             return
 
-        tool_outputs = [
-            run_tool_call(tool_call, handlers, call_index=index)
-            for index, tool_call in enumerate(tool_calls, start=1)
-        ]
+        tool_outputs: list[dict[str, str]] = []
+        manual_compact = False
+        manual_focus: str | None = None
+        for index, tool_call in enumerate(tool_calls, start=1):
+            if tool_call.name == "compact":
+                manual_compact = True
+                try:
+                    compact_args = json.loads(tool_call.arguments)
+                except Exception:
+                    compact_args = {}
+                focus_val = compact_args.get("focus")
+                if isinstance(focus_val, str) and focus_val.strip():
+                    manual_focus = focus_val.strip()
+                continue
+            tool_outputs.append(run_tool_call(tool_call, handlers, call_index=index))
+
         history.extend(tool_outputs)
+        # Layer 3: model-triggered manual compaction.
+        if manual_compact:
+            print_stream_text("reason", "[manual compact]\n")
+            print_stream_text("reason", "Compacting...\n")
+            history[:] = compact_history(client=client, model=model, history=history, focus=manual_focus)
+            print_stream_text("reason", "Compacted\n\n")
+            return
+
         if any(str(item.get("output", "")) == "工具已中断" for item in tool_outputs):
             return

@@ -58,6 +58,9 @@ def agent_loop(
     client: OpenAI,
     model: str,
     effort: str,
+    token_threshold: int,
+    keep_recent_tool_outputs: int,
+    min_compact_output_length: int,
     history: list[dict[str, Any] | Any],
 ) -> None:
     bundle = TOOL_REGISTRY.get_bundle()
@@ -65,6 +68,9 @@ def agent_loop(
         client=client,
         model=model,
         effort=effort,
+        token_threshold=token_threshold,
+        keep_recent_tool_outputs=keep_recent_tool_outputs,
+        min_compact_output_length=min_compact_output_length,
         history=history,
         tools=bundle.tools,
         handlers=bundle.handlers,
@@ -123,7 +129,15 @@ def main() -> None:
         refresh_tools_and_system_prompt(history)
         refresh_agents_system_messages(history)
         try:
-            agent_loop(client=client, model=config.model, effort=config.effort, history=history)
+            agent_loop(
+                client=client,
+                model=config.model,
+                effort=config.effort,
+                token_threshold=config.token_threshold,
+                keep_recent_tool_outputs=config.keep_recent_tool_outputs,
+                min_compact_output_length=config.min_compact_output_length,
+                history=history,
+            )
         except KeyboardInterrupt:
             print()
             continue

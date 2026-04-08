@@ -6,6 +6,9 @@ from pathlib import Path
 
 DEFAULT_MODEL = "gpt-5.4"
 DEFAULT_EFFORT = "medium"
+DEFAULT_TOKEN_THRESHOLD = 100000
+DEFAULT_KEEP_RECENT_TOOL_OUTPUTS = 15
+DEFAULT_MIN_COMPACT_OUTPUT_LENGTH = 100
 
 
 @dataclass(frozen=True)
@@ -48,6 +51,9 @@ class AgentConfig:
     base_url: str | None
     model: str
     effort: str
+    token_threshold: int
+    keep_recent_tool_outputs: int
+    min_compact_output_length: int
 
 
 def _create_default_config(config_path: Path) -> None:
@@ -57,6 +63,9 @@ def _create_default_config(config_path: Path) -> None:
         "base_url": "",
         "model": DEFAULT_MODEL,
         "effort": DEFAULT_EFFORT,
+        "token_threshold": DEFAULT_TOKEN_THRESHOLD,
+        "keep_recent_tool_outputs": DEFAULT_KEEP_RECENT_TOOL_OUTPUTS,
+        "min_compact_output_length": DEFAULT_MIN_COMPACT_OUTPUT_LENGTH,
     }
     config_path.write_text(
         json.dumps(default_content, ensure_ascii=False, indent=2),
@@ -82,6 +91,9 @@ def load_agent_config(config_path: Path = CONFIG_PATH) -> AgentConfig:
     base_url = config.get("base_url")
     model = config.get("model", DEFAULT_MODEL)
     effort = config.get("effort", "medium")
+    token_threshold = config.get("token_threshold", DEFAULT_TOKEN_THRESHOLD)
+    keep_recent_tool_outputs = config.get("keep_recent_tool_outputs", DEFAULT_KEEP_RECENT_TOOL_OUTPUTS)
+    min_compact_output_length = config.get("min_compact_output_length", DEFAULT_MIN_COMPACT_OUTPUT_LENGTH)
 
     if not isinstance(api_key, str) or not api_key.strip():
         raise ValueError(
@@ -93,6 +105,12 @@ def load_agent_config(config_path: Path = CONFIG_PATH) -> AgentConfig:
         raise ValueError("配置项 model 必须是非空字符串。")
     if not isinstance(effort, str) or effort.strip() not in {"none", "minimal", "low", "medium", "high", "xhigh"}:
         raise ValueError("配置项 effort 必须是 none、minimal、low、medium、high或xhigh")
+    if not isinstance(token_threshold, int) or token_threshold <= 0:
+        raise ValueError("配置项 token_threshold 必须是正整数。")
+    if not isinstance(keep_recent_tool_outputs, int) or keep_recent_tool_outputs < 0:
+        raise ValueError("配置项 keep_recent_tool_outputs 必须是非负整数。")
+    if not isinstance(min_compact_output_length, int) or min_compact_output_length < 0:
+        raise ValueError("配置项 min_compact_output_length 必须是非负整数。")
 
     cleaned_base_url = base_url.strip() if isinstance(base_url, str) else None
     return AgentConfig(
@@ -100,4 +118,7 @@ def load_agent_config(config_path: Path = CONFIG_PATH) -> AgentConfig:
         base_url=cleaned_base_url if cleaned_base_url else None,
         model=model.strip(),
         effort=effort.strip(),
+        token_threshold=token_threshold,
+        keep_recent_tool_outputs=keep_recent_tool_outputs,
+        min_compact_output_length=min_compact_output_length,
     )

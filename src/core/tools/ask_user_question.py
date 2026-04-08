@@ -204,7 +204,7 @@ def run_ask_user_question(arguments: dict[str, Any]) -> dict[str, str]:
     for answer in answers:
         display_lines.append(f"- {answer['id']}: {answer['answer']}")
     display_text = "\n".join(display_lines)
-    return {"output": display_text, "display_result": display_text}
+    return {"output": display_text}
 
 
 TOOL_NAME = "ask_user_question"

@@ -216,16 +216,7 @@ class SkillManager:
                         "content": content,
                     }
                     output = json.dumps(payload, ensure_ascii=False)
-                    preview_lines = content.splitlines()
-                    max_preview_lines = 10
-                    if len(preview_lines) > max_preview_lines:
-                        hidden = len(preview_lines) - max_preview_lines
-                        preview_lines = preview_lines[:max_preview_lines] + [f"... ({hidden} more lines)"]
-                    preview_text = "\n".join(preview_lines)
-                    return {
-                        "output": output,
-                        "display_result": preview_text,
-                    }
+                    return {"output": output}
                 except Exception as exc:
                     return f"Error: {exc}"
         return f"Error: Skill not found: {name.strip()}"

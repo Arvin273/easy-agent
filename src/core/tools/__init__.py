@@ -10,6 +10,9 @@ from core.tools.bash import TOOL_DEF as BASH_TOOL_DEF
 from core.tools.bash import TOOL_HANDLER as BASH_TOOL_HANDLER
 from core.tools.bash import TOOL_NAME as BASH_TOOL_NAME
 from core.tools.common import WORKDIR
+from core.tools.compact import TOOL_DEF as COMPACT_TOOL_DEF
+from core.tools.compact import TOOL_HANDLER as COMPACT_TOOL_HANDLER
+from core.tools.compact import TOOL_NAME as COMPACT_TOOL_NAME
 from core.tools.edit_file import TOOL_DEF as EDIT_FILE_TOOL_DEF
 from core.tools.edit_file import TOOL_HANDLER as EDIT_FILE_TOOL_HANDLER
 from core.tools.edit_file import TOOL_NAME as EDIT_FILE_TOOL_NAME
@@ -29,6 +32,7 @@ TOOL_HANDLERS = {
     WRITE_FILE_TOOL_NAME: WRITE_FILE_TOOL_HANDLER,
     EDIT_FILE_TOOL_NAME: EDIT_FILE_TOOL_HANDLER,
     ASK_USER_QUESTION_TOOL_NAME: ASK_USER_QUESTION_TOOL_HANDLER,
+    COMPACT_TOOL_NAME: COMPACT_TOOL_HANDLER,
 }
 
 TOOLS = [
@@ -37,6 +41,7 @@ TOOLS = [
     WRITE_FILE_TOOL_DEF,
     EDIT_FILE_TOOL_DEF,
     ASK_USER_QUESTION_TOOL_DEF,
+    COMPACT_TOOL_DEF,
 ]
 
 
