@@ -1,6 +1,7 @@
 import json
 import os
 import shutil
+import sys
 import textwrap
 from dataclasses import dataclass
 from pathlib import Path
@@ -73,22 +74,8 @@ def _resolve_line_width(columns: int) -> int:
 
 
 def _wrap_text(text: str, width: int) -> str:
-    body_width = max(10, width - len(THEME.body_indent))
-    wrapped_lines: list[str] = []
-    for raw_line in str(text).splitlines() or [""]:
-        if not raw_line.strip():
-            wrapped_lines.append("")
-            continue
-        chunks = textwrap.wrap(
-            raw_line,
-            width=body_width,
-            replace_whitespace=False,
-            drop_whitespace=False,
-            break_long_words=True,
-            break_on_hyphens=False,
-        )
-        wrapped_lines.extend(chunks or [raw_line])
-    return "\n".join(f"{THEME.body_indent}{line}" if line else "" for line in wrapped_lines)
+    lines = str(text).splitlines() or [""]
+    return "\n".join(f"{THEME.body_indent}{line}" if line else "" for line in lines)
 
 
 def print_box(
@@ -115,6 +102,29 @@ def print_box(
     print(f"{color}{top}{RESET}")
     print(body)
     print()
+
+
+def print_stream_text(role: str, content: str) -> None:
+    text = str(content or "")
+    if not text:
+        return
+
+    color = COLORS.get(role, "")
+    lines = text.splitlines(keepends=True)
+    if not lines:
+        return
+
+    for line in lines:
+        parts = line.split("\r")
+        for index, part in enumerate(parts):
+            if index > 0:
+                sys.stdout.write("\r")
+            if part:
+                sys.stdout.write(f"{color}{THEME.body_indent}{part}{RESET}")
+        if line.endswith("\n"):
+            sys.stdout.flush()
+
+    sys.stdout.flush()
 
 
 def _display_directory(path_text: str) -> str:

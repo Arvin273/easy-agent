@@ -8,7 +8,14 @@ from typing import Any, Callable
 
 from openai import OpenAI
 
-from core.terminal.cli_output import COLORS, RESET, THEME, format_tool_call, print_box
+from core.terminal.cli_output import (
+    COLORS,
+    RESET,
+    THEME,
+    format_tool_call,
+    print_box,
+    print_stream_text,
+)
 
 
 def normalize_tool_result(result: Any) -> tuple[str, str]:
@@ -75,8 +82,11 @@ def run_with_working_counter(callable_obj: Callable[[], Any]) -> tuple[Any | Non
 
     try:
         while True:
-            if done_event.wait(1):
-                break
+            try:
+                if done_event.wait(1):
+                    break
+            except KeyboardInterrupt:
+                return None, max(1, counter["seconds"]), True
             counter["seconds"] += 1
             print(
                 f"\r{working_color}{THEME.body_indent}Generating {counter['seconds']}s... (Esc to cancel){RESET}",
@@ -107,7 +117,7 @@ def print_response_items(
         for summary_item in item.summary or []:
             text = getattr(summary_item, "text", "")
             if text:
-                print_box("reason", text, title="REASON")
+                print_stream_text("reason", f"Thinking: {text}\n\n")
 
     for item in response.output:
         if item.type != "message":
@@ -158,8 +168,9 @@ def run_tool_call(
             result = f"Tool '{tool_name}' failed: {exc}"
 
     output, display_result = normalize_tool_result(result)
-    result_title = "Tool Result" if call_index is None else f"Tool Result #{call_index}"
-    print_box("tool", display_result, title=result_title)
+    if tool_name != "bash" and str(display_result or "").strip():
+        print_stream_text("reason", f"{display_result}\n")
+        print()
     return {
         "type": "function_call_output",
         "call_id": tool_call.call_id,
