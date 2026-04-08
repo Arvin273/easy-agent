@@ -4,8 +4,8 @@ import json
 import sys
 from pathlib import Path
 
-from core.cli_output import THEME, print_box
-from core.config_manager import CONFIG_PATH, DEFAULT_EFFORT, DEFAULT_MODEL
+from core.config.config_manager import CONFIG_PATH, DEFAULT_EFFORT, DEFAULT_MODEL
+from core.terminal.cli_output import THEME, print_box
 
 COMMAND = "/model"
 DESCRIPTION = "切换模型与推理强度（↑/↓ + Enter）"

@@ -2,11 +2,12 @@ from typing import Any
 
 import httpx
 from openai import OpenAI
-from core.cli_output import print_box, print_startup_banner
-from core.config_manager import load_agent_config
+from core.config.config_manager import load_agent_config
+from core.context.agents_instructions import load_agents_system_messages
+from core.context.skill_manager import SkillManager
 from core.session_runner import run_until_no_tool_call
+from core.terminal.cli_output import print_box, print_startup_banner
 from core.commands import handle_slash_command
-from core.skill_manager import SkillManager
 from core.tools import ToolRegistry
 
 SKILL_MANAGER = SkillManager()
@@ -33,6 +34,23 @@ def refresh_tools_and_system_prompt(history: list[dict[str, Any] | Any]) -> None
     first = history[0]
     if isinstance(first, dict) and first.get("role") == "system":
         first["content"] = build_system_prompt(SKILL_MANAGER)
+
+
+def _is_agents_system_message(message: dict[str, Any] | Any) -> bool:
+    if not isinstance(message, dict):
+        return False
+    if message.get("role") != "system":
+        return False
+    content = message.get("content")
+    return isinstance(content, str) and content.startswith("以下是来自") and "AGENTS.md 指令，请严格遵守：" in content
+
+
+def refresh_agents_system_messages(history: list[dict[str, Any] | Any]) -> None:
+    if not history:
+        return
+    base_message = history[:1]
+    other_messages = [message for message in history[1:] if not _is_agents_system_message(message)]
+    history[:] = [*base_message, *load_agents_system_messages(), *other_messages]
 
 
 def agent_loop(
@@ -76,7 +94,8 @@ def main() -> None:
         {
             "role": "system",
             "content": system_prompt,
-        }
+        },
+        *load_agents_system_messages(),
     ]
     while True:
         try:
@@ -98,9 +117,9 @@ def main() -> None:
 
         history.append({"role": "user", "content": query})
         refresh_tools_and_system_prompt(history)
+        refresh_agents_system_messages(history)
         agent_loop(client=client, model=config.model, effort=config.effort, history=history)
 
 
 if __name__ == "__main__":
     main()
-

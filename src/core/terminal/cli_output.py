@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from core.config.config_manager import PATHS
+
 
 def _ansi_enabled() -> bool:
     value = os.getenv("NO_COLOR", "").strip().lower()
@@ -115,11 +117,10 @@ def print_box(
     print()
 
 
-
 def _display_directory(path_text: str) -> str:
     try:
         path = Path(path_text).resolve()
-        home = Path.home().resolve()
+        home = PATHS.home
         path_str = str(path)
         home_str = str(home)
         if path_str == home_str:
@@ -143,7 +144,6 @@ def print_startup_banner(model: str, effort: str, directory: str, version: str =
     line2 = f"model:     {model} {effort}     /model to change"
     line3 = f"directory: {_display_directory(directory)}"
 
-    # Very narrow terminals: degrade gracefully without a box.
     if box_width < 16:
         for line in (line1, line2, line3):
             print(f"{THEME.body_indent}{line}")

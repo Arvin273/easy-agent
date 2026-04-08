@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from typing import Callable
 
-from core.cli_output import print_box
+from core.terminal.cli_output import print_box
 from core.commands import exit as exit_command
 from core.commands import help as help_command
 from core.commands import model as model_command
 from core.commands import skills as skills_command
-from core.skill_manager import SkillManager
+from core.context.skill_manager import SkillManager
 
 SLASH_COMMANDS = {
     help_command.COMMAND: help_command.DESCRIPTION,

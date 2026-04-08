@@ -6,6 +6,8 @@ from pathlib import Path
 import re
 from typing import Any, Callable
 
+from core.config.config_manager import AppPaths, PATHS
+
 
 SKILL_FILE_NAME = "SKILL.md"
 
@@ -21,16 +23,18 @@ class SkillInfo:
 
 class SkillManager:
     def __init__(self, workdir: Path | None = None, home: Path | None = None) -> None:
-        self.workdir = (workdir or Path.cwd()).resolve()
-        self.home = (home or Path.home()).resolve()
+        self.paths = AppPaths(
+            workdir=workdir or PATHS.workdir,
+            home=home or PATHS.home,
+        )
+        self.workdir = self.paths.workdir
+        self.home = self.paths.home
         self._skills_cache: list[SkillInfo] | None = None
         self._cache_stamp: tuple[str, ...] | None = None
 
     def _candidate_roots(self) -> list[Path]:
-        home_root = (self.home / ".agents" / "skills").resolve()
-        local_root = (self.workdir / ".agents" / "skills").resolve()
         roots: list[Path] = []
-        for root in (home_root, local_root):
+        for root in (self.paths.home_skills_dir, self.paths.local_skills_dir):
             if root not in roots:
                 roots.append(root)
         return roots
@@ -63,7 +67,6 @@ class SkillManager:
         name = ""
         description = ""
 
-        # YAML front matter
         if len(lines) >= 3 and lines[0].strip() == "---":
             for idx in range(1, len(lines)):
                 if lines[idx].strip() == "---":
@@ -80,7 +83,6 @@ class SkillManager:
                             description = v
                     break
 
-        # name:/description: 行
         if not name:
             match = re.search(r"(?im)^\s*name\s*[:：]\s*(.+?)\s*$", content)
             if match:
@@ -90,7 +92,6 @@ class SkillManager:
             if match:
                 description = match.group(1).strip()
 
-        # 标题/首行兜底
         if not name:
             for line in lines:
                 text = line.strip()
@@ -129,7 +130,6 @@ class SkillManager:
 
         skills_by_key: dict[str, SkillInfo] = {}
 
-        # home 先加载，cwd 后加载；同名时 cwd 覆盖 home
         for root in self._candidate_roots():
             if not root.exists() or not root.is_dir():
                 continue
@@ -139,14 +139,12 @@ class SkillManager:
                     continue
                 name, description = self._parse_skill_metadata(skill_file, skill_dir.name)
                 key = name.strip().lower() or skill_dir.name.strip().lower()
-                skills_by_key[key] = (
-                    SkillInfo(
-                        name=name,
-                        description=description,
-                        directory_name=skill_dir.name,
-                        directory=skill_dir,
-                        skill_file=skill_file,
-                    )
+                skills_by_key[key] = SkillInfo(
+                    name=name,
+                    description=description,
+                    directory_name=skill_dir.name,
+                    directory=skill_dir,
+                    skill_file=skill_file,
                 )
         result = list(skills_by_key.values())
         self._skills_cache = result
@@ -160,7 +158,7 @@ class SkillManager:
 
         lines = [
             "[Skills]",
-            "你可以使用以下 skills（来源：当前工作目录和家目录的 .agents/skills）：",
+            "你可以使用以下 skills（来源：当前工作目录和家目录的 .ea/skills）：",
         ]
         for skill in skills:
             desc = skill.description if skill.description else "(no description)"

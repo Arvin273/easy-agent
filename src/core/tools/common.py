@@ -1,6 +1,8 @@
 from pathlib import Path
 
-WORKDIR = Path.cwd()
+from core.config.config_manager import PATHS
+
+WORKDIR = PATHS.workdir
 
 
 def safe_path(path_str: str) -> Path:

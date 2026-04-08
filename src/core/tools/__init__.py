@@ -19,8 +19,8 @@ from core.tools.read_file import TOOL_NAME as READ_FILE_TOOL_NAME
 from core.tools.write_file import TOOL_DEF as WRITE_FILE_TOOL_DEF
 from core.tools.write_file import TOOL_HANDLER as WRITE_FILE_TOOL_HANDLER
 from core.tools.write_file import TOOL_NAME as WRITE_FILE_TOOL_NAME
-from core.skill_manager import SkillManager
-from core.config_manager import DEFAULT_MODEL
+from core.context.skill_manager import SkillManager
+from core.config.config_manager import DEFAULT_MODEL
 
 
 TOOL_HANDLERS = {

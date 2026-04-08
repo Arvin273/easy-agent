@@ -8,7 +8,7 @@ from typing import Any, Callable
 
 from openai import OpenAI
 
-from core.cli_output import COLORS, RESET, THEME, format_tool_call, print_box
+from core.terminal.cli_output import COLORS, RESET, THEME, format_tool_call, print_box
 
 
 def normalize_tool_result(result: Any) -> tuple[str, str]:

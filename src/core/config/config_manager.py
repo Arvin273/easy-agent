@@ -4,10 +4,42 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-
-CONFIG_PATH = Path.home() / ".agents" / "config.json"
 DEFAULT_MODEL = "gpt-5.4"
 DEFAULT_EFFORT = "medium"
+
+
+@dataclass(frozen=True)
+class AppPaths:
+    workdir: Path
+    home: Path
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "workdir", self.workdir.resolve())
+        object.__setattr__(self, "home", self.home.resolve())
+
+    @property
+    def app_dir(self) -> Path:
+        return self.home / ".ea"
+
+    @property
+    def config_path(self) -> Path:
+        return self.app_dir / "config.json"
+
+    @property
+    def home_skills_dir(self) -> Path:
+        return self.app_dir / "skills"
+
+    @property
+    def local_ea_dir(self) -> Path:
+        return self.workdir / ".ea"
+
+    @property
+    def local_skills_dir(self) -> Path:
+        return self.local_ea_dir / "skills"
+
+
+PATHS = AppPaths(workdir=Path.cwd(), home=Path.home())
+CONFIG_PATH = PATHS.config_path
 
 
 @dataclass(frozen=True)

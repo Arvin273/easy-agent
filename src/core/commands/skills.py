@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from core.cli_output import print_box
-from core.skill_manager import SkillManager
+from core.context.skill_manager import SkillManager
+from core.terminal.cli_output import print_box
 
 COMMAND = "/skills"
 DESCRIPTION = "显示可用 skills"
@@ -13,8 +13,8 @@ def handle(skill_manager: SkillManager) -> bool:
         print_box("ai", "未发现可用 skills。", title="Skills")
         return False
 
-    workdir_root = (skill_manager.workdir / ".agents" / "skills").resolve()
-    home_root = (skill_manager.home / ".agents" / "skills").resolve()
+    workdir_root = skill_manager.paths.local_skills_dir
+    home_root = skill_manager.paths.home_skills_dir
     blocks: list[str] = []
     for index, skill in enumerate(skills, start=1):
         location = "工作区"

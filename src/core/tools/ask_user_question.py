@@ -2,7 +2,7 @@ import json
 import sys
 from typing import Any
 
-from core.cli_output import THEME, print_box
+from core.terminal.cli_output import THEME, print_box
 
 
 def _read_selection_key() -> str:

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from core.cli_output import print_box
+from core.terminal.cli_output import print_box
 
 COMMAND = "/help"
 DESCRIPTION = "显示命令帮助"
