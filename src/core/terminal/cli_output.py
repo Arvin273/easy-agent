@@ -121,7 +121,7 @@ def format_tool_call(tool_call: dict[str, Any]) -> str:
     name = str(tool_call.get("name", "unknown"))
     args = tool_call.get("args", {})
     if not args:
-        return f"调用工具: {name}"
+        return f"tool_name: {name}"
 
     try:
         args_text = json.dumps(args, ensure_ascii=False, indent=2)
@@ -133,7 +133,7 @@ def format_tool_call(tool_call: dict[str, Any]) -> str:
         hidden = len(arg_lines) - 8
         args_text = "\n".join(arg_lines[:8] + [f"... ({hidden} more lines)"])
 
-    return f"调用工具: {name}\n参数:\n{args_text}"
+    return f"tool_name: {name}\nparameters:\n{args_text}"
 
 
 def _resolve_line_width(columns: int) -> int:

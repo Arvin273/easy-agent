@@ -186,16 +186,14 @@ def print_response_items(
 
 def run_tool_call(
     tool_call: Any,
-    handlers: dict[str, Callable[[dict[str, Any]], Any]],
-    call_index: int | None = None,
+    handlers: dict[str, Callable[[dict[str, Any]], Any]]
 ) -> dict[str, str]:
     tool_name = tool_call.name
     arguments = json.loads(tool_call.arguments)
-    call_title = "Tool Calling" if call_index is None else f"Tool Calling #{call_index}"
     print_box(
         "tool_calling",
         format_tool_call({"name": tool_name, "args": arguments}),
-        title=call_title,
+        title="Tool Calling",
     )
     handler = handlers.get(tool_name)
     if handler is None:
@@ -295,7 +293,7 @@ def run_until_no_tool_call(
             )
         )
         if cancelled:
-            print_box("error", "已中断本次生成。", title="Interrupted")
+            print_stream_text("error", "[Interrupted] 已中断本次生成。\n\n")
             return
 
         ai_title_suffix = f"Generating {elapsed_seconds}s..."
@@ -321,12 +319,11 @@ def run_until_no_tool_call(
                 if isinstance(focus_val, str) and focus_val.strip():
                     manual_focus = focus_val.strip()
                 continue
-            tool_outputs.append(run_tool_call(tool_call, handlers, call_index=index))
+            tool_outputs.append(run_tool_call(tool_call, handlers))
 
         history.extend(tool_outputs)
         # Layer 3: model-triggered manual compaction.
         if manual_compact:
-            print_stream_text("reason", "[manual compact]\n")
             print_stream_text("reason", "Compacting...\n")
             history[:] = compact_history(client=client, model=model, history=history, focus=manual_focus)
             print_stream_text("reason", "Compacted\n\n")

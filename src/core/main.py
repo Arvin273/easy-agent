@@ -114,6 +114,8 @@ def main() -> None:
             break
         if query:
             input_history.append(query)
+        else:
+            continue
 
         if query.startswith("/"):
             should_exit = handle_slash_command(query, SKILL_MANAGER)

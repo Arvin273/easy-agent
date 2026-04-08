@@ -8,7 +8,7 @@ from core.config.config_manager import CONFIG_PATH, DEFAULT_EFFORT, DEFAULT_MODE
 from core.terminal.cli_output import THEME, print_box
 
 COMMAND = "/model"
-DESCRIPTION = "切换模型与推理强度（↑/↓ + Enter）"
+DESCRIPTION = "切换模型与推理强度（↑/↓ + Enter，Esc/Ctrl+C 取消）"
 
 MODEL_OPTIONS = [
     "gpt-5.4",
@@ -28,6 +28,8 @@ def _read_selection_key() -> str:
             key = msvcrt.getwch()
             if key in ("\r", "\n"):
                 return "enter"
+            if key == "\x1b":
+                return "cancel"
             if key in ("\x00", "\xe0"):
                 arrow = msvcrt.getwch()
                 if arrow == "H":
@@ -44,6 +46,7 @@ def _read_selection_key() -> str:
     else:
         import termios
         import tty
+        import select
 
         stdin = sys.stdin.fileno()
         old_settings = termios.tcgetattr(stdin)
@@ -51,16 +54,26 @@ def _read_selection_key() -> str:
             tty.setraw(stdin)
             while True:
                 key = sys.stdin.read(1)
+                if key == "\x03":
+                    raise KeyboardInterrupt
                 if key in ("\r", "\n"):
                     return "enter"
                 if key == "\x1b":
+                    ready, _, _ = select.select([sys.stdin], [], [], 0.03)
+                    if not ready:
+                        return "cancel"
                     second = sys.stdin.read(1)
+                    if second != "[":
+                        return "cancel"
+                    ready, _, _ = select.select([sys.stdin], [], [], 0.03)
+                    if not ready:
+                        return "cancel"
                     third = sys.stdin.read(1)
                     if second == "[" and third == "A":
                         return "up"
                     if second == "[" and third == "B":
                         return "down"
-                    continue
+                    return "cancel"
                 if key.lower() == "k":
                     return "up"
                 if key.lower() == "j":
@@ -103,6 +116,9 @@ def _select_from_options(title: str, prompt: str, options: list[str], default_in
         if key == "enter":
             print()
             return options[selected]
+        if key == "cancel":
+            print()
+            raise KeyboardInterrupt
         if key == "up":
             selected = (selected - 1) % len(options)
         if key == "down":
@@ -151,19 +167,22 @@ def handle() -> bool:
     model_candidates = list(dict.fromkeys([current_model, *MODEL_OPTIONS]))
     effort_candidates = list(dict.fromkeys([current_effort, *EFFORT_OPTIONS]))
 
-    model = _select_from_options(
-        title="Model Selector",
-        prompt=f"当前模型: {current_model}\n使用 ↑/↓ 选择模型，按 Enter 确认。",
-        options=model_candidates,
-        default_index=model_candidates.index(current_model),
-    )
+    try:
+        model = _select_from_options(
+            title="Model Selector",
+            prompt=f"当前模型: {current_model}\n使用 ↑/↓ 选择模型，按 Enter 确认，Esc/Ctrl+C 取消。",
+            options=model_candidates,
+            default_index=model_candidates.index(current_model),
+        )
 
-    effort = _select_from_options(
-        title="Effort Selector",
-        prompt=f"当前推理强度: {current_effort}\n使用 ↑/↓ 选择推理强度，按 Enter 确认。",
-        options=effort_candidates,
-        default_index=effort_candidates.index(current_effort),
-    )
+        effort = _select_from_options(
+            title="Effort Selector",
+            prompt=f"当前推理强度: {current_effort}\n使用 ↑/↓ 选择推理强度，按 Enter 确认，Esc/Ctrl+C 取消。",
+            options=effort_candidates,
+            default_index=effort_candidates.index(current_effort),
+        )
+    except KeyboardInterrupt:
+        return False
 
     payload["model"] = model
     payload["effort"] = effort

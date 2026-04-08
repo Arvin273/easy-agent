@@ -10,28 +10,21 @@ DESCRIPTION = "显示可用 skills"
 def handle(skill_manager: SkillManager) -> bool:
     skills = skill_manager.discover_skills()
     if not skills:
-        print_box("ai", "未发现可用 skills。", title="Skills")
+        print_box("ai", "未发现可用 skills。", title="Available Skills")
         return False
 
-    workdir_root = skill_manager.paths.local_skills_dir
-    home_root = skill_manager.paths.home_skills_dir
     blocks: list[str] = []
     for index, skill in enumerate(skills, start=1):
-        location = "工作区"
-        if skill.directory.resolve().is_relative_to(home_root):
-            location = "家目录"
-        if skill.directory.resolve().is_relative_to(workdir_root):
-            location = "工作区"
+        location = str(skill.directory.resolve())
         description = skill.description if skill.description else "(no description)"
         blocks.append(
             "\n".join(
                 [
-                    f"{index}.",
                     f"name: {skill.name}",
                     f"description: {description}",
                     f"location: {location}",
                 ]
             )
         )
-    print_box("ai", "\n\n".join(blocks), title="Skills")
+    print_box("ai", "\n\n".join(blocks), title="Available Skills")
     return False
