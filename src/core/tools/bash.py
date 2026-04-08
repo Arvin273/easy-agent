@@ -7,6 +7,22 @@ from typing import Any
 from core.terminal.cli_output import print_stream_text
 from core.tools.common import WORKDIR
 
+_ACTIVE_PROCESSES_LOCK = threading.Lock()
+_ACTIVE_PROCESSES: set[subprocess.Popen[bytes]] = set()
+
+
+def interrupt_running_bash() -> bool:
+    interrupted = False
+    with _ACTIVE_PROCESSES_LOCK:
+        processes = list(_ACTIVE_PROCESSES)
+    for process in processes:
+        try:
+            process.kill()
+            interrupted = True
+        except Exception:
+            continue
+    return interrupted
+
 
 def run_bash(arguments: dict[str, Any]) -> str:
     def decode_console_output(data: bytes) -> str:
@@ -60,6 +76,9 @@ def run_bash(arguments: dict[str, Any]) -> str:
     except Exception as exc:
         return f"Error: {exc}"
 
+    with _ACTIVE_PROCESSES_LOCK:
+        _ACTIVE_PROCESSES.add(process)
+
     stdout_chunks: list[str] = []
     stderr_chunks: list[str] = []
 
@@ -93,12 +112,16 @@ def run_bash(arguments: dict[str, Any]) -> str:
     stderr_thread.start()
 
     try:
-        result_code = process.wait(timeout=120)
-    except subprocess.TimeoutExpired:
-        process.kill()
-        stdout_thread.join(timeout=1)
-        stderr_thread.join(timeout=1)
-        return "Error: Timeout (120s)"
+        try:
+            result_code = process.wait(timeout=120)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            stdout_thread.join(timeout=1)
+            stderr_thread.join(timeout=1)
+            return "Error: Timeout (120s)"
+    finally:
+        with _ACTIVE_PROCESSES_LOCK:
+            _ACTIVE_PROCESSES.discard(process)
 
     stdout_thread.join(timeout=1)
     stderr_thread.join(timeout=1)

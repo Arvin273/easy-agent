@@ -1,5 +1,3 @@
-import sys
-import time
 from typing import Any
 
 import httpx
@@ -8,7 +6,8 @@ from core.config.config_manager import load_agent_config
 from core.context.agents_instructions import load_agents_system_messages
 from core.context.skill_manager import SkillManager
 from core.session_runner import run_until_no_tool_call
-from core.terminal.cli_output import ANSI_ENABLED, print_box, print_startup_banner
+from core.terminal.cli_output import print_box, print_startup_banner
+from core.terminal.input_reader import read_user_input
 from core.commands import handle_slash_command
 from core.tools import ToolRegistry
 
@@ -72,122 +71,6 @@ def agent_loop(
     )
 
 
-def _clear_input_line(prompt: str, buffer_len: int) -> None:
-    sys.stdout.write("\r")
-    if ANSI_ENABLED:
-        sys.stdout.write("\x1b[2K")
-    else:
-        sys.stdout.write(" " * (len(prompt) + buffer_len + 2))
-        sys.stdout.write("\r")
-    sys.stdout.write(prompt)
-    sys.stdout.flush()
-
-
-def _read_user_input_windows(prompt: str) -> str:
-    import msvcrt
-
-    sys.stdout.write(prompt)
-    sys.stdout.flush()
-
-    buffer: list[str] = []
-    esc_pending = False
-    last_esc_time = 0.0
-
-    while True:
-        ch = msvcrt.getwch()
-
-        if ch in ("\r", "\n"):
-            sys.stdout.write("\n")
-            sys.stdout.flush()
-            return "".join(buffer)
-        if ch == "\x03":
-            raise KeyboardInterrupt
-        if ch in ("\x00", "\xe0"):
-            msvcrt.getwch()
-            esc_pending = False
-            continue
-        if ch == "\x1b":
-            now = time.monotonic()
-            if esc_pending and (now - last_esc_time) <= 0.6:
-                buffer_len = len(buffer)
-                buffer = []
-                esc_pending = False
-                _clear_input_line(prompt, buffer_len)
-            else:
-                esc_pending = True
-                last_esc_time = now
-            continue
-
-        esc_pending = False
-        if ch in ("\b", "\x7f"):
-            if buffer:
-                buffer.pop()
-                sys.stdout.write("\b \b")
-                sys.stdout.flush()
-            continue
-
-        buffer.append(ch)
-        sys.stdout.write(ch)
-        sys.stdout.flush()
-
-
-def _read_user_input_posix(prompt: str) -> str:
-    import termios
-    import tty
-
-    sys.stdout.write(prompt)
-    sys.stdout.flush()
-
-    buffer: list[str] = []
-    esc_pending = False
-    last_esc_time = 0.0
-    stdin = sys.stdin.fileno()
-    old_settings = termios.tcgetattr(stdin)
-    try:
-        tty.setraw(stdin)
-        while True:
-            ch = sys.stdin.read(1)
-            if ch in ("\r", "\n"):
-                sys.stdout.write("\n")
-                sys.stdout.flush()
-                return "".join(buffer)
-            if ch == "\x03":
-                raise KeyboardInterrupt
-            if ch == "\x1b":
-                now = time.monotonic()
-                if esc_pending and (now - last_esc_time) <= 0.6:
-                    buffer_len = len(buffer)
-                    buffer = []
-                    esc_pending = False
-                    _clear_input_line(prompt, buffer_len)
-                else:
-                    esc_pending = True
-                    last_esc_time = now
-                continue
-
-            esc_pending = False
-            if ch in ("\x7f", "\b"):
-                if buffer:
-                    buffer.pop()
-                    sys.stdout.write("\b \b")
-                    sys.stdout.flush()
-                continue
-
-            buffer.append(ch)
-            sys.stdout.write(ch)
-            sys.stdout.flush()
-    finally:
-        termios.tcsetattr(stdin, termios.TCSADRAIN, old_settings)
-
-
-def read_user_input(prompt: str) -> str:
-    if not sys.stdin.isatty() or not sys.stdout.isatty():
-        return input(prompt)
-    if sys.platform.startswith("win"):
-        return _read_user_input_windows(prompt)
-    return _read_user_input_posix(prompt)
-
-
 def main() -> None:
     try:
         config = load_agent_config()
@@ -215,13 +98,16 @@ def main() -> None:
         },
         *load_agents_system_messages(),
     ]
+    input_history: list[str] = []
     while True:
         try:
-            query = read_user_input("> ").strip()
+            query = read_user_input("> ", history=input_history).strip()
             print()
         except (EOFError, KeyboardInterrupt):
             print()
             break
+        if query:
+            input_history.append(query)
 
         if query.startswith("/"):
             should_exit = handle_slash_command(query, SKILL_MANAGER)
@@ -236,7 +122,11 @@ def main() -> None:
         history.append({"role": "user", "content": query})
         refresh_tools_and_system_prompt(history)
         refresh_agents_system_messages(history)
-        agent_loop(client=client, model=config.model, effort=config.effort, history=history)
+        try:
+            agent_loop(client=client, model=config.model, effort=config.effort, history=history)
+        except KeyboardInterrupt:
+            print()
+            continue
 
 
 if __name__ == "__main__":

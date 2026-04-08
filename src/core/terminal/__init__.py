@@ -7,6 +7,7 @@ from core.terminal.cli_output import (
     print_box,
     print_startup_banner,
 )
+from core.terminal.input_reader import read_user_input
 
 __all__ = [
     "ANSI_ENABLED",
@@ -16,4 +17,5 @@ __all__ = [
     "format_tool_call",
     "print_box",
     "print_startup_banner",
+    "read_user_input",
 ]

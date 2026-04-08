@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import signal
 import shutil
 import sys
 import threading
@@ -8,6 +9,7 @@ from typing import Any, Callable
 
 from openai import OpenAI
 
+import core.tools.bash as bash_tool
 from core.terminal.cli_output import (
     COLORS,
     RESET,
@@ -64,10 +66,13 @@ def _read_cancel_key_nonblocking() -> str | None:
 
 def run_with_working_counter(callable_obj: Callable[[], Any]) -> tuple[Any | None, int, bool]:
     done_event = threading.Event()
+    cancel_event = threading.Event()
     working_color = COLORS.get("user", "")
-    counter = {"seconds": 0}
+    counter = {"ticks": 0}
     result_holder: dict[str, Any] = {}
     error_holder: dict[str, BaseException] = {}
+    previous_sigint_handler: Any = None
+    sigint_handler_installed = False
 
     def request_worker() -> None:
         try:
@@ -80,26 +85,48 @@ def run_with_working_counter(callable_obj: Callable[[], Any]) -> tuple[Any | Non
     request_thread = threading.Thread(target=request_worker, daemon=True)
     request_thread.start()
 
+    def _on_sigint(signum: int, frame: Any) -> None:
+        cancel_event.set()
+
+    if threading.current_thread() is threading.main_thread():
+        try:
+            previous_sigint_handler = signal.getsignal(signal.SIGINT)
+            signal.signal(signal.SIGINT, _on_sigint)
+            sigint_handler_installed = True
+        except Exception:
+            sigint_handler_installed = False
+
     try:
+        print(
+            f"\r{working_color}{THEME.body_indent}Generating 0s... (Esc to cancel){RESET}",
+            end="",
+            flush=True,
+        )
         while True:
-            try:
-                if done_event.wait(1):
-                    break
-            except KeyboardInterrupt:
-                return None, max(1, counter["seconds"]), True
-            counter["seconds"] += 1
-            print(
-                f"\r{working_color}{THEME.body_indent}Generating {counter['seconds']}s... (Esc to cancel){RESET}",
-                end="",
-                flush=True,
-            )
+            if cancel_event.is_set():
+                return None, max(1, counter["ticks"] // 10), True
+            if done_event.wait(0.1):
+                break
+            counter["ticks"] += 1
+            if counter["ticks"] % 10 == 0:
+                elapsed = counter["ticks"] // 10
+                print(
+                    f"\r{working_color}{THEME.body_indent}Generating {elapsed}s... (Esc to cancel){RESET}",
+                    end="",
+                    flush=True,
+                )
             if _read_cancel_key_nonblocking() == "esc":
-                return None, max(1, counter["seconds"]), True
+                return None, max(1, counter["ticks"] // 10), True
 
         if "error" in error_holder:
             raise error_holder["error"]
-        return result_holder.get("value"), max(1, counter["seconds"]), False
+        return result_holder.get("value"), max(1, counter["ticks"] // 10), False
     finally:
+        if sigint_handler_installed:
+            try:
+                signal.signal(signal.SIGINT, previous_sigint_handler)
+            except Exception:
+                pass
         columns = shutil.get_terminal_size(fallback=(100, 20)).columns
         print(f"\r{' ' * max(1, columns - 1)}\r", end="", flush=True)
 
@@ -162,12 +189,56 @@ def run_tool_call(
     if handler is None:
         result: Any = f"Unknown tool: {tool_name}"
     else:
-        try:
-            result = handler(arguments)
-        except Exception as exc:
-            result = f"Tool '{tool_name}' failed: {exc}"
+        result_holder: dict[str, Any] = {}
+        error_holder: dict[str, BaseException] = {}
+        done_event = threading.Event()
+
+        def tool_worker() -> None:
+            try:
+                result_holder["value"] = handler(arguments)
+            except BaseException as exc:  # noqa: BLE001
+                error_holder["error"] = exc
+            finally:
+                done_event.set()
+
+        tool_thread = threading.Thread(target=tool_worker, daemon=True)
+        tool_thread.start()
+
+        interrupted = False
+        warned_not_interruptible = False
+        while True:
+            if done_event.wait(0.1):
+                break
+            if _read_cancel_key_nonblocking() == "esc":
+                if tool_name == "bash":
+                    interrupted = True
+                    bash_tool.interrupt_running_bash()
+                    break
+                if not warned_not_interruptible:
+                    print_stream_text("reason", "当前工具不支持中断，等待执行完成...\n")
+                    warned_not_interruptible = True
+
+        if interrupted:
+            print_stream_text("reason", "工具已中断\n\n")
+            return {
+                "type": "function_call_output",
+                "call_id": tool_call.call_id,
+                "output": "工具已中断",
+            }
+
+        if "error" in error_holder:
+            result = f"Tool '{tool_name}' failed: {error_holder['error']}"
+        else:
+            result = result_holder.get("value")
 
     output, display_result = normalize_tool_result(result)
+    if str(output) == "工具已中断":
+        print_stream_text("reason", "工具已中断\n\n")
+        return {
+            "type": "function_call_output",
+            "call_id": tool_call.call_id,
+            "output": "工具已中断",
+        }
     if tool_name != "bash" and str(display_result or "").strip():
         print_stream_text("reason", f"{display_result}\n")
         print()
@@ -196,7 +267,7 @@ def run_until_no_tool_call(
             )
         )
         if cancelled:
-            print_box("user", "已中断本次生成（ESC）。", title="Interrupted")
+            print_box("error", "已中断本次生成。", title="Interrupted")
             return
 
         ai_title_suffix = f"Generating {elapsed_seconds}s..."
@@ -213,3 +284,5 @@ def run_until_no_tool_call(
             for index, tool_call in enumerate(tool_calls, start=1)
         ]
         history.extend(tool_outputs)
+        if any(str(item.get("output", "")) == "工具已中断" for item in tool_outputs):
+            return
