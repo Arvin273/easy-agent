@@ -5,7 +5,6 @@
 - 在命令行里直接对话
 - 可按需调用工具完成任务
 - 支持基于 `skills` 的能力扩展
-- 基于 `prompt_toolkit` 的增强交互输入
 
 适合个人开发、脚本协助、和日常自动化场景。
 
@@ -31,6 +30,8 @@ pip install git+https://gitee.com/c031001/easy-agent.git
 ```bash
 pip install git+https://github.com/Arvin273/easy-agent.git
 ```
+
+同样，安装完成后会注册全局命令 `ea`。
 
 ## 启动与工作目录
 
@@ -92,13 +93,6 @@ ea
 - `/tokens`：查看当前会话 token 估算用量
 - `/exit`：退出
 
-交互说明：
-
-- 输入框为空时不会发送消息。
-- 以 `/` 开头输入时会实时显示 slash 命令前缀匹配列表，可用 `↑/↓` 选择，`Enter` 直接提交选中命令。
-- 非 `bash` 工具输出在终端统一展示为：前 4 行 + `... (N more lines)` + 后 4 行。
-- `bash` 工具为实时输出，并带滚动预览。
-
 ## Skills 放在哪里
 
 程序会自动从以下两个位置发现 skills（目录名下需包含 `SKILL.md`）：
@@ -107,18 +101,6 @@ ea
 - 用户家目录：`~/.ea/skills/`
 
 当同名 skill 同时存在时，工作目录下的版本会覆盖家目录版本，便于项目级定制。
-
-## 开发与校验
-
-常用开发命令：
-
-```bash
-pip install -e .
-python -m compileall src/core
-```
-
-- `pip install -e .`：可编辑安装并注册 `ea` 命令。
-- `python -m compileall src/core`：快速检查核心代码语法。
 
 ## 版本与更新
 
@@ -133,4 +115,4 @@ pip install -e .
 
 ## 演示图
 
-![image-20260409164508885](./assets/image-20260409164508885.png)
+![image-20260409164508885](./assets/img.png)
