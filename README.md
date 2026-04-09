@@ -45,7 +45,10 @@ ea
   "api_key": "你的API密钥",
   "base_url": "",
   "model": "gpt-5.4",
-  "effort": "medium"
+  "effort": "medium",
+  "token_threshold": 100000,
+  "keep_recent_tool_outputs": 10,
+  "min_compact_output_length": 100
 }
 ```
 
@@ -55,6 +58,9 @@ ea
 - `base_url`：可选；使用代理或兼容网关时填写。
 - `model`：默认 `gpt-5.4`。
 - `effort`：推理强度，常用 `medium`。
+- `token_threshold`：触发自动会话压缩的 token 估算阈值。
+- `keep_recent_tool_outputs`：保留最近多少条工具输出不做微压缩。
+- `min_compact_output_length`：工具输出达到该长度才会被微压缩。
 
 ## 基本使用
 
@@ -66,8 +72,14 @@ ea
 内置命令（持续更新）：
 
 - `/help`：查看命令帮助
-- `/skills`：查看已发现 skills
+- `/skills`：查看已发现 skills（显示具体目录路径）
+- `/model`：切换模型与推理强度（`↑/↓ + Enter`，`Esc/Ctrl+C` 取消）
 - `/exit`：退出
+
+交互说明：
+
+- 输入框为空时不会发送消息。
+- 非 `bash` 工具输出在终端统一只展示前 10 行，超出会显示 `... (N more lines)`。
 
 ## Skills 放在哪里
 
@@ -77,6 +89,18 @@ ea
 - 用户家目录：`~/.ea/skills/`
 
 当同名 skill 同时存在时，工作目录下的版本会覆盖家目录版本，便于项目级定制。
+
+## 开发与校验
+
+常用开发命令：
+
+```bash
+pip install -e .
+python -m compileall src/core
+```
+
+- `pip install -e .`：可编辑安装并注册 `ea` 命令。
+- `python -m compileall src/core`：快速检查核心代码语法。
 
 ## 版本与更新
 

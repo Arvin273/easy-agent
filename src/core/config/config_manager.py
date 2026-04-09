@@ -7,8 +7,9 @@ from pathlib import Path
 DEFAULT_MODEL = "gpt-5.4"
 DEFAULT_EFFORT = "medium"
 DEFAULT_TOKEN_THRESHOLD = 100000
-DEFAULT_KEEP_RECENT_TOOL_OUTPUTS = 15
+DEFAULT_KEEP_RECENT_TOOL_OUTPUTS = 10
 DEFAULT_MIN_COMPACT_OUTPUT_LENGTH = 100
+DEFAULT_KEEP_RECENT_MESSAGES_COUNT = 10
 
 
 @dataclass(frozen=True)
@@ -54,6 +55,7 @@ class AgentConfig:
     token_threshold: int
     keep_recent_tool_outputs: int
     min_compact_output_length: int
+    keep_recent_messages_count: int
 
 
 def _create_default_config(config_path: Path) -> None:
@@ -66,6 +68,7 @@ def _create_default_config(config_path: Path) -> None:
         "token_threshold": DEFAULT_TOKEN_THRESHOLD,
         "keep_recent_tool_outputs": DEFAULT_KEEP_RECENT_TOOL_OUTPUTS,
         "min_compact_output_length": DEFAULT_MIN_COMPACT_OUTPUT_LENGTH,
+        "keep_recent_messages_count": DEFAULT_KEEP_RECENT_MESSAGES_COUNT,
     }
     config_path.write_text(
         json.dumps(default_content, ensure_ascii=False, indent=2),
@@ -94,6 +97,9 @@ def load_agent_config(config_path: Path = CONFIG_PATH) -> AgentConfig:
     token_threshold = config.get("token_threshold", DEFAULT_TOKEN_THRESHOLD)
     keep_recent_tool_outputs = config.get("keep_recent_tool_outputs", DEFAULT_KEEP_RECENT_TOOL_OUTPUTS)
     min_compact_output_length = config.get("min_compact_output_length", DEFAULT_MIN_COMPACT_OUTPUT_LENGTH)
+    keep_recent_messages_count = config.get("keep_recent_messages_count")
+    if keep_recent_messages_count is None:
+        keep_recent_messages_count = config.get("keep_recent_messages_days", DEFAULT_KEEP_RECENT_MESSAGES_COUNT)
 
     if not isinstance(api_key, str) or not api_key.strip():
         raise ValueError(
@@ -111,6 +117,12 @@ def load_agent_config(config_path: Path = CONFIG_PATH) -> AgentConfig:
         raise ValueError("配置项 keep_recent_tool_outputs 必须是非负整数。")
     if not isinstance(min_compact_output_length, int) or min_compact_output_length < 0:
         raise ValueError("配置项 min_compact_output_length 必须是非负整数。")
+    if not isinstance(keep_recent_messages_count, int) or keep_recent_messages_count < 0:
+        raise ValueError("配置项 keep_recent_messages_count 必须是非负整数。")
+
+    if "keep_recent_messages_count" not in config:
+        config["keep_recent_messages_count"] = keep_recent_messages_count
+        config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
 
     cleaned_base_url = base_url.strip() if isinstance(base_url, str) else None
     return AgentConfig(
@@ -121,4 +133,5 @@ def load_agent_config(config_path: Path = CONFIG_PATH) -> AgentConfig:
         token_threshold=token_threshold,
         keep_recent_tool_outputs=keep_recent_tool_outputs,
         min_compact_output_length=min_compact_output_length,
+        keep_recent_messages_count=keep_recent_messages_count,
     )

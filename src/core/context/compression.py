@@ -5,13 +5,12 @@ from typing import Any
 
 from openai import OpenAI
 
-
 def estimate_tokens(messages: list[dict[str, Any] | Any]) -> int:
     try:
         payload = json.dumps(messages, ensure_ascii=False, default=str)
     except Exception:
         payload = str(messages)
-    return max(1, len(payload) // 4)
+    return len(payload)
 
 
 def micro_compact(
@@ -96,8 +95,22 @@ def compact_history(
     model: str,
     history: list[dict[str, Any] | Any],
     focus: str | None = None,
+    keep_recent_messages_count: int = 0,
 ) -> list[dict[str, Any]]:
-    prompt = compact_prompt(history, focus=focus)
+    preserved_system = _leading_system_messages(history)
+    non_system_messages: list[dict[str, Any] | Any] = history[len(preserved_system):]
+    if keep_recent_messages_count > 0:
+        split_index = max(0, len(non_system_messages) - keep_recent_messages_count)
+        to_compact = non_system_messages[:split_index]
+        preserved_recent = non_system_messages[split_index:]
+    else:
+        to_compact = non_system_messages
+        preserved_recent = []
+
+    if not to_compact:
+        return [*preserved_system, *preserved_recent]
+
+    prompt = compact_prompt(to_compact, focus=focus)
     summary = "No summary generated."
     try:
         response = client.responses.create(
@@ -112,9 +125,8 @@ def compact_history(
     except Exception as exc:
         summary = f"Summary failed: {exc}"
 
-    preserved_system = _leading_system_messages(history)
     compressed_note = (
         "[Conversation compressed]\n\n"
         f"{summary}"
     )
-    return [*preserved_system, {"role": "user", "content": compressed_note}]
+    return [*preserved_system, {"role": "user", "content": compressed_note}, *preserved_recent]

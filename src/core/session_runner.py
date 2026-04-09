@@ -267,6 +267,7 @@ def run_until_no_tool_call(
     token_threshold: int,
     keep_recent_tool_outputs: int,
     min_compact_output_length: int,
+    keep_recent_messages_count: int,
     history: list[dict[str, Any] | Any],
     tools: list[dict[str, Any]],
     handlers: dict[str, Callable[[dict[str, Any]], Any]],
@@ -281,7 +282,12 @@ def run_until_no_tool_call(
         # Layer 2: auto-compaction by token threshold.
         if estimate_tokens(history) > token_threshold:
             print_stream_text("reason", "Compacting...\n")
-            history[:] = compact_history(client=client, model=model, history=history)
+            history[:] = compact_history(
+                client=client,
+                model=model,
+                history=history,
+                keep_recent_messages_count=keep_recent_messages_count,
+            )
             print_stream_text("reason", "Compacted\n\n")
 
         response, elapsed_seconds, cancelled = run_with_working_counter(
@@ -306,28 +312,10 @@ def run_until_no_tool_call(
             return
 
         tool_outputs: list[dict[str, str]] = []
-        manual_compact = False
-        manual_focus: str | None = None
-        for index, tool_call in enumerate(tool_calls, start=1):
-            if tool_call.name == "compact":
-                manual_compact = True
-                try:
-                    compact_args = json.loads(tool_call.arguments)
-                except Exception:
-                    compact_args = {}
-                focus_val = compact_args.get("focus")
-                if isinstance(focus_val, str) and focus_val.strip():
-                    manual_focus = focus_val.strip()
-                continue
+        for tool_call in tool_calls:
             tool_outputs.append(run_tool_call(tool_call, handlers))
 
         history.extend(tool_outputs)
-        # Layer 3: model-triggered manual compaction.
-        if manual_compact:
-            print_stream_text("reason", "Compacting...\n")
-            history[:] = compact_history(client=client, model=model, history=history, focus=manual_focus)
-            print_stream_text("reason", "Compacted\n\n")
-            return
 
         if any(str(item.get("output", "")) == "工具已中断" for item in tool_outputs):
             return

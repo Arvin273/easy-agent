@@ -55,6 +55,7 @@ SLASH_HINTS = (
     "/help 查看可用命令",
     "/skills 查看已安装技能",
     "/model 切换模型与推理强度",
+    "/compact 手动压缩当前会话上下文",
     "/exit 退出会话",
 )
 
@@ -86,7 +87,14 @@ def _resolve_version(default: str = "0.0.2") -> str:
         return default
 
 
-def _random_slash_hint() -> str:
+def _random_slash_hint(command_descriptions: dict[str, str] | None = None) -> str:
+    if command_descriptions:
+        dynamic_hints = [
+            f"{command} {description}".rstrip()
+            for command, description in sorted(command_descriptions.items())
+        ]
+        if dynamic_hints:
+            return random.choice(dynamic_hints)
     return random.choice(SLASH_HINTS)
 
 
@@ -210,7 +218,13 @@ def _display_directory(path_text: str) -> str:
         return path_text
 
 
-def print_startup_banner(model: str, effort: str, directory: str, version: str | None = None) -> None:
+def print_startup_banner(
+    model: str,
+    effort: str,
+    directory: str,
+    version: str | None = None,
+    command_descriptions: dict[str, str] | None = None,
+) -> None:
     display_version = (version or "").strip() or _resolve_version()
     columns = shutil.get_terminal_size(fallback=(100, 20)).columns
     available_width = max(20, columns - len(THEME.body_indent))
@@ -227,7 +241,7 @@ def print_startup_banner(model: str, effort: str, directory: str, version: str |
     detail_lines = (
         ("Model", f"{model} ({effort})"),
         ("Path", _display_directory(directory)),
-        ("Hint", _random_slash_hint()),
+        ("Hint", _random_slash_hint(command_descriptions)),
     )
 
     if box_width < 16:

@@ -8,7 +8,7 @@ from core.config.config_manager import CONFIG_PATH, DEFAULT_EFFORT, DEFAULT_MODE
 from core.terminal.cli_output import THEME, print_box
 
 COMMAND = "/model"
-DESCRIPTION = "切换模型与推理强度（↑/↓ + Enter，Esc/Ctrl+C 取消）"
+DESCRIPTION = "切换模型与推理强度"
 
 MODEL_OPTIONS = [
     "gpt-5.4",

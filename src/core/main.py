@@ -8,7 +8,7 @@ from core.context.skill_manager import SkillManager
 from core.session_runner import run_until_no_tool_call
 from core.terminal.cli_output import print_box, print_startup_banner
 from core.terminal.input_reader import read_user_input
-from core.commands import handle_slash_command
+from core.commands import get_slash_command_descriptions, handle_slash_command
 from core.tools import ToolRegistry
 
 SKILL_MANAGER = SkillManager()
@@ -61,6 +61,7 @@ def agent_loop(
     token_threshold: int,
     keep_recent_tool_outputs: int,
     min_compact_output_length: int,
+    keep_recent_messages_count: int,
     history: list[dict[str, Any] | Any],
 ) -> None:
     bundle = TOOL_REGISTRY.get_bundle()
@@ -71,6 +72,7 @@ def agent_loop(
         token_threshold=token_threshold,
         keep_recent_tool_outputs=keep_recent_tool_outputs,
         min_compact_output_length=min_compact_output_length,
+        keep_recent_messages_count=keep_recent_messages_count,
         history=history,
         tools=bundle.tools,
         handlers=bundle.handlers,
@@ -93,6 +95,7 @@ def main() -> None:
         model=config.model,
         effort=config.effort,
         directory=str(SKILL_MANAGER.workdir),
+        command_descriptions=get_slash_command_descriptions(),
     )
 
     system_prompt = build_system_prompt(SKILL_MANAGER)
@@ -118,7 +121,15 @@ def main() -> None:
             continue
 
         if query.startswith("/"):
-            should_exit = handle_slash_command(query, SKILL_MANAGER)
+            should_exit = handle_slash_command(
+                query,
+                SKILL_MANAGER,
+                client=client,
+                model=config.model,
+                history=history,
+                keep_recent_messages_count=config.keep_recent_messages_count,
+                token_threshold=config.token_threshold,
+            )
             if should_exit:
                 break
             try:
@@ -138,6 +149,7 @@ def main() -> None:
                 token_threshold=config.token_threshold,
                 keep_recent_tool_outputs=config.keep_recent_tool_outputs,
                 min_compact_output_length=config.min_compact_output_length,
+                keep_recent_messages_count=config.keep_recent_messages_count,
                 history=history,
             )
         except KeyboardInterrupt:
