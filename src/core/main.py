@@ -94,7 +94,7 @@ def main() -> None:
     print_startup_banner(
         model=config.model,
         effort=config.effort,
-        directory=str(SKILL_MANAGER.workdir),
+        directory=SKILL_MANAGER.workdir.as_posix(),
         command_descriptions=get_slash_command_descriptions(),
     )
 

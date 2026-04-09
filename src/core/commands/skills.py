@@ -15,7 +15,7 @@ def handle(skill_manager: SkillManager) -> bool:
 
     blocks: list[str] = []
     for index, skill in enumerate(skills, start=1):
-        location = str(skill.directory.resolve())
+        location = skill.directory.resolve().as_posix()
         description = skill.description if skill.description else "(no description)"
         blocks.append(
             "\n".join(
