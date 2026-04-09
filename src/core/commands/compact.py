@@ -5,7 +5,7 @@ from typing import Any
 from openai import OpenAI
 
 from core.context.compression import compact_history
-from core.terminal.cli_output import print_text
+from core.terminal.cli_output import print_text, Colors
 
 COMMAND = "/compact"
 DESCRIPTION = "手动压缩当前会话上下文"
@@ -20,12 +20,12 @@ def handle(
     if client is None or not model or history is None:
         return False
 
-    print_text("reason", "Compacting...\n")
+    print_text(Colors.reason, "Compacting...\n")
     history[:] = compact_history(
         client=client,
         model=model,
         history=history,
         keep_recent_messages_count=keep_recent_messages_count,
     )
-    print_text("reason", "Compacted\n\n")
+    print_text(Colors.reason, "Compacted\n\n")
     return False

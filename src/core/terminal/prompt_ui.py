@@ -234,6 +234,7 @@ def read_text(
     history: list[str] | None = None,
     default: str = "",
     command_descriptions: dict[str, str] | None = None,
+    echo_result: bool = True,
 ) -> str:
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         return input(prompt)
@@ -249,7 +250,8 @@ def read_text(
         completer=completer,
         complete_while_typing=bool(command_descriptions),
     )
-    print(f"{prompt}{result}\n")
+    if echo_result:
+        print(f"{prompt}{result}\n")
     return result
 
 

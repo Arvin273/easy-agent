@@ -16,7 +16,7 @@ from core.context.compression import (
     micro_compact,
 )
 from core.terminal.cli_output import (
-    COLORS,
+    Colors,
     RESET,
     THEME,
     format_tool_call,
@@ -88,7 +88,7 @@ def _read_cancel_key_nonblocking() -> str | None:
 def run_with_working_counter(callable_obj: Callable[[], Any]) -> tuple[Any | None, int, bool]:
     done_event = threading.Event()
     cancel_event = threading.Event()
-    working_color = COLORS.get("reason", "")
+    working_color = Colors.reason
     counter = {"ticks": 0}
     result_holder: dict[str, Any] = {}
     error_holder: dict[str, BaseException] = {}
@@ -174,10 +174,10 @@ def print_response_items(
             text = getattr(summary_item, "text", "")
             if text:
                 print_marked_text(
-                    "reason",
                     f"Thinking: {text}",
-                    marker="🧠",
-                    body_role="reason",
+                    marker="•",
+                    marker_color=Colors.reason,
+                    body_color=Colors.reason,
                 )
 
     for item in response.output:
@@ -189,10 +189,10 @@ def print_response_items(
             text = getattr(content_item, "text", "")
             if text:
                 print_marked_text(
-                    "ai",
                     text,
                     marker="•",
-                    body_role="",
+                    marker_color=Colors.ai,
+                    body_color=Colors.ai,
                 )
                 history.append({"role": "assistant", "content": text})
 
@@ -218,10 +218,10 @@ def run_tool_call(
     tool_name = tool_call.name
     arguments = json.loads(tool_call.arguments)
     print_marked_text(
-        "tool_calling",
         format_tool_call({"name": tool_name, "args": arguments}),
-        marker="🛠️",
-        body_role="",
+        marker="•",
+        marker_color=Colors.green,
+        body_color=Colors.simple,
     )
     handler = handlers.get(tool_name)
     if handler is None:
@@ -253,11 +253,11 @@ def run_tool_call(
                     bash_tool.interrupt_running_bash()
                     break
                 if not warned_not_interruptible:
-                    print_text("reason", "当前工具不支持中断，等待执行完成...\n\n")
+                    print_text(Colors.reason, "当前工具不支持中断，等待执行完成...\n\n")
                     warned_not_interruptible = True
 
         if interrupted:
-            print_text("reason", "工具已中断\n\n")
+            print_text(Colors.reason, "工具已中断\n\n")
             return {
                 "type": "function_call_output",
                 "call_id": tool_call.call_id,
@@ -271,15 +271,15 @@ def run_tool_call(
 
     output = normalize_tool_result(result)
     if str(output) == "工具已中断":
-        print_text("reason", "工具已中断\n\n")
+        print_text(Colors.reason, "工具已中断\n\n")
         return {
             "type": "function_call_output",
             "call_id": tool_call.call_id,
             "output": "工具已中断",
         }
     if tool_name != "bash" and str(output).strip():
-        preview = _format_tool_output_preview(str(output), edge_lines=4)
-        print_text("reason", f"{preview}\n")
+        preview = _format_tool_output_preview(str(output), edge_lines=3)
+        print_text(Colors.reason, f"{preview}\n")
         print()
     return {
         "type": "function_call_output",
@@ -309,14 +309,14 @@ def run_until_no_tool_call(
         )
         # Layer 2: auto-compaction by token threshold.
         if estimate_tokens(history) > token_threshold:
-            print_text("reason", "Compacting...\n")
+            print_text(Colors.reason, "Compacting...\n")
             history[:] = compact_history(
                 client=client,
                 model=model,
                 history=history,
                 keep_recent_messages_count=keep_recent_messages_count,
             )
-            print_text("reason", "Compacted\n\n")
+            print_text(Colors.reason, "Compacted\n\n")
 
         response, elapsed_seconds, cancelled = run_with_working_counter(
             lambda: client.responses.create(
@@ -327,7 +327,7 @@ def run_until_no_tool_call(
             )
         )
         if cancelled:
-            print_text("error", "[Interrupted] 已中断本次生成。\n\n")
+            print_text(Colors.error, "[Interrupted] 已中断本次生成。\n\n")
             return
 
         tool_calls = print_response_items(

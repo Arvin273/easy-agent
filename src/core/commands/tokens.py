@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from core.context.compression import estimate_tokens
-from core.terminal.cli_output import print_title_and_content
+from core.terminal.cli_output import print_title_and_content, Colors
 
 COMMAND = "/tokens"
 DESCRIPTION = "查看当前会话token用量"
@@ -16,7 +16,7 @@ def handle(history: list[dict[str, Any] | Any] | None, token_threshold: int = 0)
         remaining = max(0, token_threshold - used)
         percent = min(999.9, (used / token_threshold) * 100)
         print_title_and_content(
-            "ai",
+            Colors.green,
             "\n".join(
                 [
                     f"当前会话估算用量: {used}",
@@ -28,5 +28,5 @@ def handle(history: list[dict[str, Any] | Any] | None, token_threshold: int = 0)
         )
         return False
 
-    print_title_and_content("ai", f"当前会话估算用量: {used}\n\n", title="Session Tokens")
+    print_title_and_content(Colors.green, f"当前会话估算用量: {used}\n\n", title="Session Tokens")
     return False

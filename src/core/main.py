@@ -6,7 +6,7 @@ from core.config.config_manager import load_agent_config
 from core.context.agents_instructions import load_agents_system_messages
 from core.context.skill_manager import SkillManager
 from core.session_runner import run_until_no_tool_call
-from core.terminal.cli_output import print_title_and_content, print_startup_banner, print_text
+from core.terminal.cli_output import print_title_and_content, print_startup_banner, print_text, Colors
 from core.terminal.prompt_ui import read_user_input
 from core.commands import get_slash_command_descriptions, handle_slash_command
 from core.tools import ToolRegistry
@@ -83,7 +83,7 @@ def main() -> None:
     try:
         config = load_agent_config()
     except Exception as exc:
-        print_text(role="error", content=str(exc) + '\n')
+        print_text(Colors.error, content=str(exc) + '\n')
         return
 
     client = OpenAI(
@@ -138,7 +138,7 @@ def main() -> None:
             try:
                 config = load_agent_config()
             except Exception as exc:
-                print_text(role="error", content=str(exc) + '\n')
+                print_text(Colors.error, content=str(exc) + '\n')
             continue
 
         history.append({"role": "user", "content": query})

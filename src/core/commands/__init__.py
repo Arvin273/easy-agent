@@ -7,7 +7,7 @@ from typing import Callable
 from openai import OpenAI
 
 from core.commands import compact as compact_command
-from core.terminal.cli_output import print_title_and_content, print_text
+from core.terminal.cli_output import print_title_and_content, print_text, Colors
 from core.commands import exit as exit_command
 from core.commands import help as help_command
 from core.commands import model as model_command
@@ -100,5 +100,5 @@ def handle_slash_command(
             token_threshold=token_threshold,
         )
         return handler(context)
-    print_text("error", f"Unknown slash command: {query}。输入 /help 查看可用命令。\n\n")
+    print_text(Colors.error, f"Unknown slash command: {query}。输入 /help 查看可用命令。\n\n")
     return False

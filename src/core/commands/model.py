@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from core.config.config_manager import CONFIG_PATH, DEFAULT_EFFORT, DEFAULT_MODEL
-from core.terminal.cli_output import print_title_and_content, print_text
+from core.terminal.cli_output import print_title_and_content, print_text, Colors
 from core.terminal.prompt_ui import select_option
 
 COMMAND = "/model"
@@ -63,7 +63,7 @@ def handle() -> bool:
     try:
         payload = _load_config_payload()
     except Exception as exc:
-        print_text("error", f"读取配置失败: {exc}\n")
+        print_text(Colors.error, f"读取配置失败: {exc}\n")
         return False
 
     current_model = str(payload.get("model") or DEFAULT_MODEL).strip() or DEFAULT_MODEL
@@ -73,13 +73,13 @@ def handle() -> bool:
     effort_candidates = list(dict.fromkeys([current_effort, *EFFORT_OPTIONS]))
 
     try:
-        print_title_and_content("ai", "请选择要使用的模型：", title="Select Model")
+        print_title_and_content(Colors.green, "请选择要使用的模型：", title="Select Model")
         model = _select_from_options(
             options=model_candidates,
             default_index=model_candidates.index(current_model),
         )
 
-        print_title_and_content("ai", "请选择推理强度：", title="Select Effort")
+        print_title_and_content(Colors.green, "请选择推理强度：", title="Select Effort")
 
         effort = _select_from_options(
             options=effort_candidates,
@@ -94,8 +94,8 @@ def handle() -> bool:
     try:
         _save_config_payload(payload)
     except Exception as exc:
-        print_text("error", f"保存配置失败: {exc}\n")
+        print_text(Colors.error, f"保存配置失败: {exc}\n")
         return False
 
-    print_title_and_content("ai", f"已切换配置:\nmodel: {model}\neffort: {effort}\n\n", title="Model Updated")
+    print_title_and_content(Colors.green, f"已切换配置:\nmodel: {model}\neffort: {effort}\n\n", title="Model Updated")
     return False

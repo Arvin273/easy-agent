@@ -1,7 +1,6 @@
-import json
 from typing import Any
 
-from core.terminal.cli_output import THEME, print_title_and_content
+from core.terminal.cli_output import THEME, print_title_and_content, Colors
 from core.terminal.prompt_ui import read_text, select_option
 
 
@@ -20,16 +19,16 @@ def _ask_single_question(
     question_text: str,
     options: list[str],
     default_index: int,
-    allow_custom_input: bool,
 ) -> dict[str, Any]:
+    allow_custom_input = True
     if default_index < 0 or default_index >= len(options):
         raise ValueError("default_index 超出 options 范围。")
 
     custom_option = "其他（自行输入）"
-    selectable_options = options + ([custom_option] if allow_custom_input else [])
+    selectable_options = options + [custom_option]
 
     print_title_and_content(
-        role="user",
+        color=Colors.user,
         title=title,
         content=question_text,
     )
@@ -40,7 +39,11 @@ def _ask_single_question(
 
     is_custom = allow_custom_input and selected_index == len(options)
     if is_custom:
-        user_input = read_text(f"{THEME.body_indent}输入你的答案并回车: ")
+        user_input = read_text(
+            f"{THEME.body_indent}输入你的答案并回车: ",
+            echo_result=False,
+        )
+        print()
         return {
             "id": question_id,
             "question": question_text,
@@ -64,11 +67,8 @@ def _ask_single_question(
 
 
 def run_ask_user_question(arguments: dict[str, Any]) -> dict[str, str]:
-    overall_title = arguments.get("title", "User Question")
     questions = arguments.get("questions")
 
-    if not isinstance(overall_title, str) or not overall_title.strip():
-        raise ValueError("title 参数必须是非空字符串。")
     if not isinstance(questions, list) or not questions:
         raise ValueError("questions 参数必须是非空数组。")
 
@@ -79,8 +79,7 @@ def run_ask_user_question(arguments: dict[str, Any]) -> dict[str, str]:
         question_text = item.get("question")
         options = item.get("options")
         default_index = item.get("default_index", 0)
-        allow_custom_input = item.get("allow_custom_input", True)
-        question_title = item.get("title") or f"{overall_title.strip()} #{idx}"
+        question_title = item.get("title")
         question_id = item.get("id") or f"q{idx}"
 
         if not isinstance(question_text, str) or not question_text.strip():
@@ -93,8 +92,6 @@ def run_ask_user_question(arguments: dict[str, Any]) -> dict[str, str]:
             raise ValueError("questions[].options 最多支持 20 项。")
         if not isinstance(default_index, int):
             raise ValueError("questions[].default_index 必须是整数。")
-        if not isinstance(allow_custom_input, bool):
-            raise ValueError("questions[].allow_custom_input 必须是布尔值。")
         if not isinstance(question_title, str) or not question_title.strip():
             raise ValueError("questions[].title 必须是非空字符串。")
         if not isinstance(question_id, str) or not question_id.strip():
@@ -107,7 +104,6 @@ def run_ask_user_question(arguments: dict[str, Any]) -> dict[str, str]:
                 "question": question_text.strip(),
                 "options": [opt.strip() for opt in options],
                 "default_index": default_index,
-                "allow_custom_input": allow_custom_input,
             }
         )
 
@@ -119,7 +115,6 @@ def run_ask_user_question(arguments: dict[str, Any]) -> dict[str, str]:
             question_text=item["question"],
             options=item["options"],
             default_index=item["default_index"],
-            allow_custom_input=item["allow_custom_input"],
         )
         answers.append(answer)
 
@@ -139,31 +134,26 @@ TOOL_DEF = {
     "parameters": {
         "type": "object",
         "properties": {
-            "title": {"type": "string", "description": "问题标题，默认 User Question"},
-                "questions": {
-                    "type": "array",
-                    "description": "问题列表（推荐使用）。",
+            "questions": {
+                "type": "array",
+                "description": "问题列表",
                 "items": {
                     "type": "object",
                     "properties": {
                         "id": {"type": "string", "description": "题目 ID，用于结果映射；不传则自动生成"},
-                        "title": {"type": "string", "description": "该题的显示标题，不传则使用总标题+序号"},
-                        "question": {"type": "string", "description": "题干"},
+                        "title": {"type": "string", "description": "该题的显示标题"},
+                        "question": {"type": "string", "description": "问题内容"},
                         "options": {
                             "type": "array",
                             "items": {"type": "string"},
                             "description": "候选项列表（至少 1 项，最多 20 项）",
                         },
                         "default_index": {"type": "integer", "description": "默认选中下标，默认 0"},
-                        "allow_custom_input": {
-                            "type": "boolean",
-                            "description": "是否追加“其他（自行输入）”选项，默认 true",
-                        },
                     },
-                        "required": ["question", "options"],
-                        "additionalProperties": False,
-                    },
+                    "required": ["title", "question", "options"],
+                    "additionalProperties": False,
                 },
+            },
         },
         "required": ["questions"],
         "additionalProperties": False,

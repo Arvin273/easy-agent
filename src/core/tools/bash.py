@@ -4,7 +4,7 @@ import threading
 from shutil import which
 from typing import Any
 
-from core.terminal.cli_output import ANSI_ENABLED, COLORS, RESET, THEME, print_text
+from core.terminal.cli_output import ANSI_ENABLED, RESET, THEME, print_text, Colors
 from core.tools.common import WORKDIR
 
 _ACTIVE_PROCESSES_LOCK = threading.Lock()
@@ -35,7 +35,7 @@ class _LiveBashPreview:
             if self._enabled:
                 self._render()
             else:
-                print_text("reason", text)
+                print_text(Colors.reason, text)
 
     def finalize(self) -> None:
         if not self._enabled:
@@ -53,11 +53,11 @@ class _LiveBashPreview:
             return "".join(self._parts)
 
     def _render(self) -> None:
-        preview_lines = _format_live_preview("".join(self._parts))
+        preview_lines = _format_live_preview("".join(self._parts), edge_lines=3)
         for _ in range(self._rendered_lines):
             sys.stdout.write("\x1b[1A\x1b[2K\r")
 
-        color = COLORS.get("reason", "")
+        color = Colors.reason
         for line in preview_lines:
             sys.stdout.write(f"{color}{THEME.body_indent}{line}{RESET}\n")
         sys.stdout.flush()

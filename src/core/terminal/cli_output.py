@@ -3,7 +3,6 @@ import os
 import random
 import shutil
 import sys
-import textwrap
 import unicodedata
 from importlib import metadata as importlib_metadata
 from dataclasses import dataclass
@@ -20,24 +19,15 @@ def _ansi_enabled() -> bool:
 
 ANSI_ENABLED = _ansi_enabled()
 RESET = "\033[0m" if ANSI_ENABLED else ""
-COLORS = {
-    "ai": "\033[32m" if ANSI_ENABLED else "",
-    "tool": "\033[34m" if ANSI_ENABLED else "",
-    "tool_calling": "\033[33m" if ANSI_ENABLED else "",
-    "error": "\033[31m" if ANSI_ENABLED else "",
-    "user": "\033[36m" if ANSI_ENABLED else "",
-    "reason": "\033[90m" if ANSI_ENABLED else "",
-    "white": "\033[37m" if ANSI_ENABLED else "",
-}
 
-ROLE_LABELS = {
-    "ai": "AI",
-    "tool": "TOOL",
-    "tool_calling": "TOOL CALL",
-    "error": "ERROR",
-    "user": "USER",
-    "reason": "REASON",
-}
+class Colors:
+    simple = ""
+    ai = ""
+    green = "\033[32m" if ANSI_ENABLED else ""
+    tool_calling = "\033[33m" if ANSI_ENABLED else ""
+    error = "\033[31m" if ANSI_ENABLED else ""
+    user = "\033[36m" if ANSI_ENABLED else ""
+    reason = "\033[90m" if ANSI_ENABLED else ""
 
 
 @dataclass(frozen=True)
@@ -60,7 +50,7 @@ SLASH_HINTS = (
 )
 
 
-def _resolve_version(default: str = "0.0.2") -> str:
+def _resolve_version(default: str = "0.0.1") -> str:
     package_name = "easy-agent"
     try:
         return importlib_metadata.version(package_name)
@@ -107,10 +97,6 @@ def _char_display_width(ch: str) -> int:
     return 1
 
 
-def _display_width(text: str) -> int:
-    return sum(_char_display_width(ch) for ch in text)
-
-
 def _fit_display_width(text: str, max_width: int) -> tuple[str, int]:
     if max_width <= 0:
         return "", 0
@@ -130,13 +116,6 @@ def format_tool_call(tool_call: dict[str, Any]) -> str:
     args = tool_call.get("args", {})
     if not args:
         return name
-
-    if not isinstance(args, dict):
-        try:
-            args_text = json.dumps(args, ensure_ascii=False)
-        except TypeError:
-            args_text = str(args)
-        return f"{name}({args_text})"
 
     parts: list[str] = []
     for key, value in args.items():
@@ -163,18 +142,16 @@ def _wrap_text(text: str, width: int) -> str:
 
 
 def print_title_and_content(
-    role: str,
+    color: str,
     content: str | None = None,
     title: str | None = None,
     title_suffix: str | None = None,
 ) -> None:
-    color = COLORS.get(role, "")
-    header = title or ROLE_LABELS.get(role, role.upper())
     columns = shutil.get_terminal_size(fallback=(100, 20)).columns
     safe_columns = max(20, columns - 2)
     line_width = min(safe_columns, _resolve_line_width(columns))
     max_header_len = max(1, line_width - 2)
-    display_header = header[:max_header_len]
+    display_header = title[:max_header_len]
     suffix = f" {title_suffix}" if title_suffix else ""
     top = f"{THEME.body_indent}[{display_header}]{suffix}"
     body = _wrap_text(content, line_width)
@@ -183,12 +160,11 @@ def print_title_and_content(
     print(body)
 
 
-def print_text(role: str, content: str) -> None:
+def print_text(color: str, content: str) -> None:
     text = str(content or "")
     if not text:
         return
 
-    color = COLORS.get(role, "")
     lines = text.splitlines(keepends=True)
     if not lines:
         return
@@ -207,16 +183,15 @@ def print_text(role: str, content: str) -> None:
 
 
 def print_marked_text(
-    role: str,
     content: str,
     marker: str,
-    body_role: str | None = None,
+    marker_color: str | None = Colors.simple,
+    body_color: str | None = Colors.simple,
 ) -> None:
     text = str(content or "").rstrip()
     if not text:
         return
 
-    body_color = COLORS.get(role, "") if body_role is None else COLORS.get(body_role, "")
     lines = text.splitlines()
     marker_prefix = f"{marker} "
     continuation_prefix = " " * len(marker_prefix)
@@ -224,7 +199,9 @@ def print_marked_text(
     for index, line in enumerate(lines):
         prefix = marker_prefix if index == 0 else continuation_prefix
         if index == 0:
-            sys.stdout.write(f"{prefix}{RESET}{body_color}{line}{RESET}\n")
+            sys.stdout.write(
+                f"{marker_color}{prefix}{RESET}{body_color}{line}{RESET}\n"
+            )
         else:
             sys.stdout.write(f"{body_color}{continuation_prefix}{line}{RESET}\n")
 
@@ -259,10 +236,10 @@ def print_startup_banner(
     available_width = max(32, columns - len(THEME.body_indent))
     box_width = min(max(THEME.banner_max_width, 64), available_width)
     inner_width = max(20, box_width - 4)
-    border_color = COLORS.get("reason", "")
-    key_color = COLORS.get("reason", "")
-    value_color = COLORS.get("", "")
-    accent_color = COLORS.get("ai", "")
+    border_color = Colors.reason
+    key_color = Colors.reason
+    value_color = Colors.simple
+    accent_color = Colors.green
 
     title = "Easy Agent"
     subtitle = f"v{display_version}"
