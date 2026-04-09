@@ -90,6 +90,72 @@ def _leading_system_messages(history: list[dict[str, Any] | Any]) -> list[dict[s
     return preserved
 
 
+def _split_with_safe_recent_messages(
+    messages: list[dict[str, Any] | Any],
+    keep_recent_messages_count: int,
+) -> tuple[list[dict[str, Any] | Any], list[dict[str, Any] | Any]]:
+    if keep_recent_messages_count <= 0:
+        return messages, []
+
+    start_index = max(0, len(messages) - keep_recent_messages_count)
+    preserved_indexes = set(range(start_index, len(messages)))
+
+    call_index_by_id: dict[str, int] = {}
+    output_indexes_by_id: dict[str, list[int]] = {}
+    for index, item in enumerate(messages):
+        if not isinstance(item, dict):
+            continue
+        item_type = item.get("type")
+        call_id = str(item.get("call_id") or "")
+        if not call_id:
+            continue
+        if item_type == "function_call":
+            call_index_by_id[call_id] = index
+        elif item_type == "function_call_output":
+            output_indexes_by_id.setdefault(call_id, []).append(index)
+
+    changed = True
+    while changed:
+        changed = False
+        for index in list(preserved_indexes):
+            item = messages[index]
+            if not isinstance(item, dict):
+                continue
+            item_type = item.get("type")
+            call_id = str(item.get("call_id") or "")
+            if not call_id:
+                continue
+            if item_type == "function_call_output":
+                call_index = call_index_by_id.get(call_id)
+                if call_index is not None and call_index not in preserved_indexes:
+                    preserved_indexes.add(call_index)
+                    changed = True
+            elif item_type == "function_call":
+                for output_index in output_indexes_by_id.get(call_id, []):
+                    if output_index not in preserved_indexes:
+                        preserved_indexes.add(output_index)
+                        changed = True
+
+    # 剔除孤立的 function_call_output，避免 API 报 call_id 关联错误。
+    for index in list(preserved_indexes):
+        item = messages[index]
+        if not isinstance(item, dict) or item.get("type") != "function_call_output":
+            continue
+        call_id = str(item.get("call_id") or "")
+        call_index = call_index_by_id.get(call_id)
+        if not call_id or call_index is None or call_index not in preserved_indexes:
+            preserved_indexes.remove(index)
+
+    to_compact: list[dict[str, Any] | Any] = []
+    preserved_recent: list[dict[str, Any] | Any] = []
+    for index, item in enumerate(messages):
+        if index in preserved_indexes:
+            preserved_recent.append(item)
+        else:
+            to_compact.append(item)
+    return to_compact, preserved_recent
+
+
 def compact_history(
     client: OpenAI,
     model: str,
@@ -99,13 +165,10 @@ def compact_history(
 ) -> list[dict[str, Any]]:
     preserved_system = _leading_system_messages(history)
     non_system_messages: list[dict[str, Any] | Any] = history[len(preserved_system):]
-    if keep_recent_messages_count > 0:
-        split_index = max(0, len(non_system_messages) - keep_recent_messages_count)
-        to_compact = non_system_messages[:split_index]
-        preserved_recent = non_system_messages[split_index:]
-    else:
-        to_compact = non_system_messages
-        preserved_recent = []
+    to_compact, preserved_recent = _split_with_safe_recent_messages(
+        non_system_messages,
+        keep_recent_messages_count=keep_recent_messages_count,
+    )
 
     if not to_compact:
         return [*preserved_system, *preserved_recent]
