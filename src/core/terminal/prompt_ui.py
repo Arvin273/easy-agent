@@ -7,7 +7,7 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.application import Application
 from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.completion import Completer, Completion
-from prompt_toolkit.filters import Condition, has_completions, is_done, renderer_height_is_known
+from prompt_toolkit.filters import Condition, is_done, renderer_height_is_known
 from prompt_toolkit.formatted_text import AnyFormattedText
 from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.key_binding import KeyBindings
@@ -56,23 +56,25 @@ class SlashCommandCompleter(Completer):
         self._command_descriptions = dict(sorted(command_descriptions.items()))
 
     def get_completions(self, document: Document, complete_event: object):
-        text = document.text_before_cursor.strip()
-        if not text.startswith("/") or " " in text:
-            return
-
-        prefix = text.lower()
-        for command, description in self._command_descriptions.items():
-            if not command.startswith(prefix):
-                continue
-            display_text = command
-            if description:
-                display_text = f"{command}  {description}"
+        text = document.text_before_cursor
+        for command, description in self.get_matches(text):
             yield Completion(
                 text=command,
-                start_position=-len(text),
+                start_position=-len(text.strip()),
                 display=command,
                 display_meta=description,
             )
+
+    def get_matches(self, text: str) -> list[tuple[str, str]]:
+        normalized = text.strip()
+        if not normalized.startswith("/") or " " in normalized:
+            return []
+        prefix = normalized.lower()
+        return [
+            (command, description)
+            for command, description in self._command_descriptions.items()
+            if command.startswith(prefix)
+        ]
 
 
 def _build_text_bindings() -> KeyBindings:
@@ -85,28 +87,37 @@ def _build_text_bindings() -> KeyBindings:
     return bindings
 
 
-def _render_completion_menu(buffer: Buffer, max_items: int = 8):
-    completion_state = buffer.complete_state
-    if completion_state is None or not completion_state.completions:
+def _render_completion_menu(
+    buffer: Buffer,
+    completer: SlashCommandCompleter,
+    max_items: int = 8,
+):
+    matches = completer.get_matches(buffer.text)
+    if not matches:
         return []
 
-    current_index = completion_state.complete_index or 0
-    start = min(max(0, current_index), max(0, len(completion_state.completions) - max_items))
-    completions = completion_state.completions[start:start + max_items]
-    command_width = max(len(completion.display_text) for completion in completions)
+    completion_state = buffer.complete_state
+    current_index = 0
+    if completion_state is not None and completion_state.complete_index is not None:
+        current_index = completion_state.complete_index
+    current_index = min(current_index, len(matches) - 1)
+
+    start = min(max(0, current_index), max(0, len(matches) - max_items))
+    visible_matches = matches[start:start + max_items]
+    command_width = max(len(command) for command, _ in visible_matches)
 
     fragments: list[tuple[str, str]] = []
-    for index, completion in enumerate(completions):
+    for index, (command, description) in enumerate(visible_matches):
         is_current = (start + index) == current_index
         command_style = (
             "class:slash-menu.command.current" if is_current else "class:slash-menu.command"
         )
         desc_style = "class:slash-menu.desc.current" if is_current else "class:slash-menu.desc"
-        command_text = completion.display_text.ljust(command_width + 2)
+        command_text = command.ljust(command_width + 2)
         fragments.append((command_style, command_text))
-        if completion.display_meta_text:
-            fragments.append((desc_style, completion.display_meta_text))
-        if index < len(completions) - 1:
+        if description:
+            fragments.append((desc_style, description))
+        if index < len(visible_matches) - 1:
             fragments.append(("", "\n"))
     return fragments
 
@@ -158,13 +169,15 @@ def _run_text_prompt(
         dont_extend_height=True,
     )
 
+    show_slash_menu = Condition(lambda: bool(completer.get_matches(buffer.text)))
+
     completion_menu = ConditionalContainer(
         VSplit(
             [
                 Window(width=Dimension.exact(len(prompt)), char=" "),
                 Window(
                     FormattedTextControl(
-                        lambda: _render_completion_menu(buffer)
+                        lambda: _render_completion_menu(buffer, completer)
                     ),
                     dont_extend_width=True,
                     dont_extend_height=True,
@@ -172,7 +185,7 @@ def _run_text_prompt(
                 ),
             ]
         ),
-        filter=has_completions,
+        filter=show_slash_menu,
     )
 
     layout = Layout(
@@ -211,6 +224,7 @@ def _run_text_prompt(
         key_bindings=bindings,
         full_screen=False,
         style=_TEXT_PROMPT_STYLE,
+        erase_when_done=True,
     )
     return app.run()
 
@@ -235,6 +249,7 @@ def read_text(
         completer=completer,
         complete_while_typing=bool(command_descriptions),
     )
+    print(f"{prompt}{result}\n")
     return result
 
 
