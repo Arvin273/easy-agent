@@ -111,20 +111,21 @@ def run_bash(arguments: dict[str, Any]) -> str:
     stdout_thread.start()
     stderr_thread.start()
 
+    timed_out = False
     try:
-        try:
-            result_code = process.wait(timeout=120)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            stdout_thread.join(timeout=1)
-            stderr_thread.join(timeout=1)
-            return "Error: Timeout (120s)"
+        process.wait(timeout=120)
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        process.kill()
     finally:
         with _ACTIVE_PROCESSES_LOCK:
             _ACTIVE_PROCESSES.discard(process)
 
     stdout_thread.join(timeout=1)
     stderr_thread.join(timeout=1)
+
+    if timed_out:
+        return "Error: Timeout (120s)"
 
     if stdout_chunks or stderr_chunks:
         sys.stdout.write("\n")
@@ -133,8 +134,6 @@ def run_bash(arguments: dict[str, Any]) -> str:
     stdout = "".join(stdout_chunks)
     stderr = "".join(stderr_chunks)
     output = (stdout + stderr).strip()
-    if result_code != 0 and output:
-        return output[:50000]
     return output[:50000] if output else "(no output)"
 
 

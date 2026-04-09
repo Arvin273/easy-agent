@@ -6,7 +6,7 @@ from core.config.config_manager import load_agent_config
 from core.context.agents_instructions import load_agents_system_messages
 from core.context.skill_manager import SkillManager
 from core.session_runner import run_until_no_tool_call
-from core.terminal.cli_output import print_box, print_startup_banner
+from core.terminal.cli_output import print_box, print_startup_banner, print_stream_text
 from core.terminal.input_reader import read_user_input
 from core.commands import get_slash_command_descriptions, handle_slash_command
 from core.tools import ToolRegistry
@@ -83,7 +83,7 @@ def main() -> None:
     try:
         config = load_agent_config()
     except Exception as exc:
-        print_box("error", str(exc), title="Config Error")
+        print_stream_text(role="error", content=str(exc) + '\n')
         return
 
     client = OpenAI(
@@ -135,7 +135,7 @@ def main() -> None:
             try:
                 config = load_agent_config()
             except Exception as exc:
-                print_box("error", f"配置重载失败: {exc}", title="Config Error")
+                print_stream_text(role="error", content=str(exc) + '\n')
             continue
 
         history.append({"role": "user", "content": query})

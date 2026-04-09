@@ -234,7 +234,7 @@ def run_tool_call(
                     bash_tool.interrupt_running_bash()
                     break
                 if not warned_not_interruptible:
-                    print_stream_text("reason", "当前工具不支持中断，等待执行完成...\n")
+                    print_stream_text("reason", "当前工具不支持中断，等待执行完成...\n\n")
                     warned_not_interruptible = True
 
         if interrupted:

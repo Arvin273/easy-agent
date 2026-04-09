@@ -227,38 +227,31 @@ def print_startup_banner(
 ) -> None:
     display_version = (version or "").strip() or _resolve_version()
     columns = shutil.get_terminal_size(fallback=(100, 20)).columns
-    available_width = max(20, columns - len(THEME.body_indent))
+    available_width = max(32, columns - len(THEME.body_indent))
     box_width = min(max(THEME.banner_max_width, 64), available_width)
-    inner_width = max(10, box_width - 4)
+    inner_width = max(20, box_width - 4)
     border_color = COLORS.get("reason", "")
-    accent_color = COLORS.get("ai", "")
     key_color = COLORS.get("reason", "")
     value_color = COLORS.get("white", "")
+    accent_color = COLORS.get("ai", "")
 
     title = "Easy Agent"
     subtitle = f"v{display_version}"
-    line1 = f"{title:<22} {subtitle}"
+    title_text = f"{title}  {subtitle}"
     detail_lines = (
         ("Model", f"{model} ({effort})"),
         ("Path", _display_directory(directory)),
         ("Hint", _random_slash_hint(command_descriptions)),
     )
 
-    if box_width < 16:
-        for key, value in detail_lines:
-            line = f"{key:<5}: {value}"
-            print(f"{THEME.body_indent}{line}")
-        print()
-        return
-
-    top_border = f"┌{'═' * (box_width - 2)}┐"
+    top_border = f"╭{'─' * (box_width - 2)}╮"
     divider = f"├{'─' * (box_width - 2)}┤"
-    bottom_border = f"└{'═' * (box_width - 2)}┘"
+    bottom_border = f"╰{'─' * (box_width - 2)}╯"
 
     print(f"{THEME.body_indent}{border_color}{top_border}{RESET}")
-    display, display_w = _fit_display_width(line1, inner_width)
-    display = display + (" " * max(0, inner_width - display_w))
-    print(f"{THEME.body_indent}{border_color}│{RESET} {accent_color}{display}{RESET} {border_color}│{RESET}")
+    title_display, title_w = _fit_display_width(title_text, inner_width)
+    title_display = title_display + (" " * max(0, inner_width - title_w))
+    print(f"{THEME.body_indent}{border_color}│{RESET} {accent_color}{title_display}{RESET} {border_color}│{RESET}")
     print(f"{THEME.body_indent}{border_color}{divider}{RESET}")
 
     for key, value in detail_lines:
