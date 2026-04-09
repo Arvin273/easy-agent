@@ -1,0 +1,362 @@
+from __future__ import annotations
+
+import sys
+from typing import TypeVar
+
+from prompt_toolkit import PromptSession
+from prompt_toolkit.application import Application
+from prompt_toolkit.buffer import Buffer
+from prompt_toolkit.completion import Completer, Completion
+from prompt_toolkit.filters import Condition, has_completions, is_done, renderer_height_is_known
+from prompt_toolkit.formatted_text import AnyFormattedText
+from prompt_toolkit.history import InMemoryHistory
+from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.key_binding.key_bindings import DynamicKeyBindings, merge_key_bindings
+from prompt_toolkit.layout import AnyContainer, ConditionalContainer, HSplit, Layout, VSplit, Window
+from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
+from prompt_toolkit.layout.dimension import Dimension
+from prompt_toolkit.layout.processors import BeforeInput
+from prompt_toolkit.shortcuts.choice_input import create_default_choice_input_style
+from prompt_toolkit.styles import BaseStyle, Style
+from prompt_toolkit.widgets import Box, Label, RadioList
+from prompt_toolkit.document import Document
+
+from core.terminal.cli_output import THEME
+
+T = TypeVar("T")
+
+_CHOICE_BINDINGS = KeyBindings()
+_CHOICE_TOOLBAR = "↑/↓ 选择，Enter 确认，Ctrl+C 取消"
+_TEXT_PROMPT_STYLE = Style.from_dict(
+    {
+        "slash-menu.command": "#5fd7ff",
+        "slash-menu.command.current": "bold #00afaf",
+        "slash-menu.desc": "#9a9a9a",
+        "slash-menu.desc.current": "#6f8f8f",
+    }
+)
+
+
+@_CHOICE_BINDINGS.add("j")
+@_CHOICE_BINDINGS.add("k")
+def _ignore_vi_navigation(event: object) -> None:
+    return None
+
+
+def _build_history(history: list[str] | None = None) -> InMemoryHistory:
+    prompt_history = InMemoryHistory()
+    for item in history or []:
+        if item.strip():
+            prompt_history.append_string(item)
+    return prompt_history
+
+
+class SlashCommandCompleter(Completer):
+    def __init__(self, command_descriptions: dict[str, str]) -> None:
+        self._command_descriptions = dict(sorted(command_descriptions.items()))
+
+    def get_completions(self, document: Document, complete_event: object):
+        text = document.text_before_cursor.strip()
+        if not text.startswith("/") or " " in text:
+            return
+
+        prefix = text.lower()
+        for command, description in self._command_descriptions.items():
+            if not command.startswith(prefix):
+                continue
+            display_text = command
+            if description:
+                display_text = f"{command}  {description}"
+            yield Completion(
+                text=command,
+                start_position=-len(text),
+                display=command,
+                display_meta=description,
+            )
+
+
+def _build_text_bindings() -> KeyBindings:
+    bindings = KeyBindings()
+
+    @bindings.add("c-u")
+    def _clear_current_input(event: object) -> None:
+        event.current_buffer.reset()
+
+    return bindings
+
+
+def _render_completion_menu(buffer: Buffer, max_items: int = 8):
+    completion_state = buffer.complete_state
+    if completion_state is None or not completion_state.completions:
+        return []
+
+    current_index = completion_state.complete_index or 0
+    start = min(max(0, current_index), max(0, len(completion_state.completions) - max_items))
+    completions = completion_state.completions[start:start + max_items]
+    command_width = max(len(completion.display_text) for completion in completions)
+
+    fragments: list[tuple[str, str]] = []
+    for index, completion in enumerate(completions):
+        is_current = (start + index) == current_index
+        command_style = (
+            "class:slash-menu.command.current" if is_current else "class:slash-menu.command"
+        )
+        desc_style = "class:slash-menu.desc.current" if is_current else "class:slash-menu.desc"
+        command_text = completion.display_text.ljust(command_width + 2)
+        fragments.append((command_style, command_text))
+        if completion.display_meta_text:
+            fragments.append((desc_style, completion.display_meta_text))
+        if index < len(completions) - 1:
+            fragments.append(("", "\n"))
+    return fragments
+
+
+def _run_text_prompt(
+    *,
+    prompt: str,
+    default: str,
+    history: InMemoryHistory,
+    completer: Completer | None,
+    complete_while_typing: bool,
+) -> str:
+    if completer is None:
+        session = PromptSession(history=history)
+        result = session.prompt(
+            prompt,
+            default=default,
+            key_bindings=_build_text_bindings(),
+        )
+        return result
+
+    document = Document(text=default, cursor_position=len(default))
+    buffer = Buffer(
+        completer=completer,
+        history=history,
+        complete_while_typing=complete_while_typing,
+        multiline=False,
+        document=document,
+    )
+
+    def _ensure_first_completion(_: Buffer) -> None:
+        completion_state = buffer.complete_state
+        if completion_state is None or not completion_state.completions:
+            return
+        if completion_state.complete_index is None:
+            completion_state.go_to_index(0)
+
+    buffer.on_completions_changed += _ensure_first_completion
+
+    input_window = Window(
+        BufferControl(
+            buffer=buffer,
+            input_processors=[BeforeInput(prompt)],
+            focus_on_click=True,
+        ),
+        dont_extend_height=True,
+    )
+
+    completion_menu = ConditionalContainer(
+        VSplit(
+            [
+                Window(width=Dimension.exact(len(prompt)), char=" "),
+                Window(
+                    FormattedTextControl(
+                        lambda: _render_completion_menu(buffer)
+                    ),
+                    dont_extend_width=True,
+                    dont_extend_height=True,
+                    height=Dimension(max=8),
+                ),
+            ]
+        ),
+        filter=has_completions,
+    )
+
+    layout = Layout(
+        HSplit(
+            [
+                input_window,
+                Window(height=Dimension.exact(1), char=" "),
+                completion_menu,
+            ]
+        ),
+        focused_element=input_window,
+    )
+
+    bindings = _build_text_bindings()
+
+    @bindings.add("enter", eager=True)
+    def _submit_input(event: object) -> None:
+        completion_state = buffer.complete_state
+        current_completion = (
+            completion_state.current_completion if completion_state is not None else None
+        )
+        if current_completion is not None:
+            buffer.apply_completion(current_completion)
+        event.app.exit(result=buffer.text)
+
+    @bindings.add("c-c")
+    @bindings.add("<sigint>")
+    def _interrupt(event: object) -> None:
+        event.app.exit(exception=KeyboardInterrupt())
+
+    app = Application(
+        layout=layout,
+        key_bindings=bindings,
+        full_screen=False,
+        style=_TEXT_PROMPT_STYLE,
+    )
+    return app.run()
+
+
+def read_text(
+    prompt: str,
+    history: list[str] | None = None,
+    default: str = "",
+    command_descriptions: dict[str, str] | None = None,
+) -> str:
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        return input(prompt)
+
+    prompt_history = _build_history(history)
+    completer = None
+    if command_descriptions:
+        completer = SlashCommandCompleter(command_descriptions)
+    result = _run_text_prompt(
+        prompt=prompt,
+        default=default,
+        history=prompt_history,
+        completer=completer,
+        complete_while_typing=bool(command_descriptions),
+    )
+    return result
+
+
+def read_user_input(
+    prompt: str,
+    history: list[str] | None = None,
+    command_descriptions: dict[str, str] | None = None,
+) -> str:
+    return read_text(prompt, history=history, command_descriptions=command_descriptions)
+
+
+def _run_choice(
+    *,
+    message: str,
+    options: list[tuple[T, str]],
+    default: T | None,
+    bottom_toolbar: AnyFormattedText,
+    key_bindings: KeyBindings,
+    style: BaseStyle | None = None,
+) -> T:
+    if style is None:
+        style = create_default_choice_input_style()
+
+    radio_list = RadioList(
+        values=options,
+        default=default,
+        select_on_focus=True,
+        open_character="",
+        select_character=">",
+        close_character="",
+        show_cursor=False,
+        show_numbers=True,
+        container_style="class:input-selection",
+        default_style="class:option",
+        selected_style="",
+        checked_style="class:selected-option",
+        number_style="class:number",
+        show_scrollbar=False,
+    )
+
+    content_parts: list[AnyContainer] = []
+    if message:
+        content_parts.append(
+            Box(
+                Label(text=message, dont_extend_height=True),
+                padding_top=0,
+                padding_left=1,
+                padding_right=1,
+                padding_bottom=0,
+            )
+        )
+    content_parts.append(
+        Box(
+            radio_list,
+            padding_top=0,
+            padding_left=3,
+            padding_right=1,
+            padding_bottom=0,
+        )
+    )
+    container: AnyContainer = HSplit(content_parts)
+
+    show_bottom_toolbar = (
+        Condition(lambda: bottom_toolbar is not None) & ~is_done & renderer_height_is_known
+    )
+
+    bottom_toolbar_container = ConditionalContainer(
+        Window(
+            FormattedTextControl(lambda: bottom_toolbar, style="class:bottom-toolbar.text"),
+            style="class:bottom-toolbar",
+            dont_extend_height=True,
+            height=Dimension(min=1),
+        ),
+        filter=show_bottom_toolbar,
+    )
+
+    layout = Layout(
+        HSplit(
+            [
+                container,
+                ConditionalContainer(Window(), filter=show_bottom_toolbar),
+                bottom_toolbar_container,
+            ]
+        ),
+        focused_element=radio_list,
+    )
+
+    app_bindings = KeyBindings()
+
+    @app_bindings.add("enter", eager=True)
+    def _accept_input(event: object) -> None:
+        event.app.exit(result=radio_list.current_value, style="class:accepted")
+
+    @app_bindings.add("c-c")
+    @app_bindings.add("<sigint>")
+    def _keyboard_interrupt(event: object) -> None:
+        event.app.exit(exception=KeyboardInterrupt(), style="class:aborting")
+
+    app = Application(
+        layout=layout,
+        full_screen=False,
+        key_bindings=merge_key_bindings(
+            [app_bindings, DynamicKeyBindings(lambda: key_bindings)]
+        ),
+        style=style,
+    )
+    return app.run()
+
+
+def select_option(
+    options: list[tuple[T, str]],
+    default: T | None = None,
+    message: str = "",
+) -> T:
+    if not options:
+        raise ValueError("options 不能为空。")
+
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        if default is not None:
+            return default
+        return options[0][0]
+
+    result = _run_choice(
+        message=f"{THEME.body_indent}{message}" if message else "",
+        options=options,
+        default=default,
+        bottom_toolbar=f"{THEME.body_indent}{_CHOICE_TOOLBAR}",
+        key_bindings=_CHOICE_BINDINGS,
+    )
+    print()
+    return result

@@ -1,93 +1,16 @@
 import json
-import sys
 from typing import Any
 
 from core.terminal.cli_output import THEME, print_title_and_content
-
-
-def _read_selection_key() -> str:
-    if sys.platform.startswith("win"):
-        import msvcrt
-
-        while True:
-            key = msvcrt.getwch()
-            if key in ("\r", "\n"):
-                return "enter"
-            if key in ("\x00", "\xe0"):
-                arrow = msvcrt.getwch()
-                if arrow == "H":
-                    return "up"
-                if arrow == "P":
-                    return "down"
-                continue
-            if key.lower() == "k":
-                return "up"
-            if key.lower() == "j":
-                return "down"
-            if key == "\x03":
-                raise KeyboardInterrupt
-    else:
-        import termios
-        import tty
-
-        stdin = sys.stdin.fileno()
-        old_settings = termios.tcgetattr(stdin)
-        try:
-            tty.setraw(stdin)
-            while True:
-                key = sys.stdin.read(1)
-                if key in ("\r", "\n"):
-                    return "enter"
-                if key == "\x1b":
-                    second = sys.stdin.read(1)
-                    third = sys.stdin.read(1)
-                    if second == "[" and third == "A":
-                        return "up"
-                    if second == "[" and third == "B":
-                        return "down"
-                    continue
-                if key.lower() == "k":
-                    return "up"
-                if key.lower() == "j":
-                    return "down"
-        finally:
-            termios.tcsetattr(stdin, termios.TCSADRAIN, old_settings)
-
-
-def _render_selection_prompt(options: list[str], selected: int) -> int:
-    lines: list[str] = []
-    for index, option in enumerate(options):
-        marker = ">" if index == selected else " "
-        lines.append(f"{THEME.body_indent}{marker} {option}")
-    text = "\n".join(lines)
-    print(text, flush=True)
-    return len(lines)
-
-
-def _move_cursor_up(lines: int) -> None:
-    if lines <= 0:
-        return
-    for _ in range(lines):
-        print("\x1b[1A\x1b[2K", end="", flush=True)
+from core.terminal.prompt_ui import read_text, select_option
 
 
 def _select_option(options: list[str], default_index: int) -> int:
-    if not sys.stdin.isatty() or not sys.stdout.isatty():
-        return default_index
-
-    selected = default_index
-    rendered_lines = _render_selection_prompt(options, selected)
-    while True:
-        key = _read_selection_key()
-        if key == "enter":
-            print()
-            return selected
-        if key == "up":
-            selected = (selected - 1) % len(options)
-        if key == "down":
-            selected = (selected + 1) % len(options)
-        _move_cursor_up(rendered_lines)
-        rendered_lines = _render_selection_prompt(options, selected)
+    pairs = [(index, option) for index, option in enumerate(options)]
+    return select_option(
+        options=pairs,
+        default=default_index,
+    )
 
 
 def _ask_single_question(
@@ -108,7 +31,7 @@ def _ask_single_question(
     print_title_and_content(
         role="user",
         title=title,
-        content=f"{question_text}\n",
+        content=question_text,
     )
     selected_index = _select_option(
         options=selectable_options,
@@ -117,7 +40,7 @@ def _ask_single_question(
 
     is_custom = allow_custom_input and selected_index == len(options)
     if is_custom:
-        user_input = input(f"{THEME.body_indent}输入你的答案并回车: ")
+        user_input = read_text(f"{THEME.body_indent}输入你的答案并回车: ")
         return {
             "id": question_id,
             "question": question_text,

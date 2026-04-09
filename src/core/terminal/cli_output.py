@@ -139,7 +139,7 @@ def format_tool_call(tool_call: dict[str, Any]) -> str:
     arg_lines = args_text.splitlines()
     if len(arg_lines) > 8:
         hidden = len(arg_lines) - 8
-        args_text = "\n".join(arg_lines[:8] + [f"... ({hidden} more lines)"])
+        args_text = "\n".join(arg_lines[:4] + [f"... ({hidden} more lines)"] + arg_lines[-4:])
 
     return f"tool_name: {name}\nparameters:\n{args_text}"
 
@@ -156,14 +156,10 @@ def _wrap_text(text: str, width: int) -> str:
 
 def print_title_and_content(
     role: str,
-    content: str,
+    content: str | None = None,
     title: str | None = None,
     title_suffix: str | None = None,
 ) -> None:
-    text = str(content or "").strip()
-    if not text:
-        return
-
     color = COLORS.get(role, "")
     header = title or ROLE_LABELS.get(role, role.upper())
     columns = shutil.get_terminal_size(fallback=(100, 20)).columns
@@ -173,11 +169,10 @@ def print_title_and_content(
     display_header = header[:max_header_len]
     suffix = f" {title_suffix}" if title_suffix else ""
     top = f"{THEME.body_indent}[{display_header}]{suffix}"
-    body = _wrap_text(text, line_width)
+    body = _wrap_text(content, line_width)
 
     print(f"{color}{top}{RESET}")
     print(body)
-    print()
 
 
 def print_text(role: str, content: str) -> None:
@@ -200,6 +195,34 @@ def print_text(role: str, content: str) -> None:
         if line.endswith("\n"):
             sys.stdout.flush()
 
+    sys.stdout.flush()
+
+
+def print_marked_text(
+    role: str,
+    content: str,
+    marker: str,
+    marker_role: str | None = None,
+    body_role: str | None = None,
+) -> None:
+    text = str(content or "").rstrip()
+    if not text:
+        return
+
+    marker_color = COLORS.get(marker_role or role, "")
+    body_color = COLORS.get(role, "") if body_role is None else COLORS.get(body_role, "")
+    lines = text.splitlines()
+    marker_prefix = f"{marker} "
+    continuation_prefix = " " * len(marker_prefix)
+
+    for index, line in enumerate(lines):
+        prefix = marker_prefix if index == 0 else continuation_prefix
+        if index == 0:
+            sys.stdout.write(f"{marker_color}{prefix}{RESET}{body_color}{line}{RESET}\n")
+        else:
+            sys.stdout.write(f"{body_color}{continuation_prefix}{line}{RESET}\n")
+
+    sys.stdout.write("\n")
     sys.stdout.flush()
 
 

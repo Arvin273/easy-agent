@@ -7,7 +7,7 @@ from core.context.agents_instructions import load_agents_system_messages
 from core.context.skill_manager import SkillManager
 from core.session_runner import run_until_no_tool_call
 from core.terminal.cli_output import print_title_and_content, print_startup_banner, print_text
-from core.terminal.input_reader import read_user_input
+from core.terminal.prompt_ui import read_user_input
 from core.commands import get_slash_command_descriptions, handle_slash_command
 from core.tools import ToolRegistry
 
@@ -110,8 +110,11 @@ def main() -> None:
     input_history: list[str] = []
     while True:
         try:
-            query = read_user_input("> ", history=input_history).strip()
-            print()
+            query = read_user_input(
+                "> ",
+                history=input_history,
+                command_descriptions=get_slash_command_descriptions(),
+            ).strip()
         except (EOFError, KeyboardInterrupt):
             print()
             break

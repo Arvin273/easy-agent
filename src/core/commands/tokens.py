@@ -23,10 +23,10 @@ def handle(history: list[dict[str, Any] | Any] | None, token_threshold: int = 0)
                     f"距离自动压缩剩余: {remaining}",
                     f"已使用比例: {percent:.1f}%",
                 ]
-            ),
+            ) + "\n\n",
             title="Session Tokens",
         )
         return False
 
-    print_title_and_content("ai", f"当前会话估算用量: {used}", title="Session Tokens")
+    print_title_and_content("ai", f"当前会话估算用量: {used}\n\n", title="Session Tokens")
     return False

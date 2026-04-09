@@ -7,7 +7,7 @@ from core.terminal.cli_output import (
     print_title_and_content,
     print_startup_banner,
 )
-from core.terminal.input_reader import read_user_input
+from core.terminal.prompt_ui import read_text, read_user_input, select_option
 
 __all__ = [
     "ANSI_ENABLED",
@@ -18,4 +18,6 @@ __all__ = [
     "print_title_and_content",
     "print_startup_banner",
     "read_user_input",
+    "read_text",
+    "select_option",
 ]

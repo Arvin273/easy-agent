@@ -20,6 +20,7 @@ from core.terminal.cli_output import (
     RESET,
     THEME,
     format_tool_call,
+    print_marked_text,
     print_title_and_content,
     print_text,
 )
@@ -34,12 +35,13 @@ def normalize_tool_result(result: Any) -> str:
     return str(result)
 
 
-def _format_tool_output_preview(output: str, max_lines: int = 10) -> str:
+def _format_tool_output_preview(output: str, edge_lines: int = 4) -> str:
     lines = output.splitlines()
+    max_lines = edge_lines * 2
     if len(lines) <= max_lines:
         return output
     hidden = len(lines) - max_lines
-    preview_lines = lines[:max_lines] + [f"... ({hidden} more lines)"]
+    preview_lines = lines[:edge_lines] + [f"... ({hidden} more lines)"] + lines[-edge_lines:]
     return "\n".join(preview_lines)
 
 
@@ -155,7 +157,6 @@ def run_with_working_counter(callable_obj: Callable[[], Any]) -> tuple[Any | Non
 def print_response_items(
     response: Any,
     history: list[Any],
-    ai_title_suffix: str | None = None,
 ) -> list[Any]:
     tool_calls: list[Any] = []
 
@@ -165,7 +166,13 @@ def print_response_items(
         for summary_item in item.summary or []:
             text = getattr(summary_item, "text", "")
             if text:
-                print_text("reason", f"Thinking: {text}\n\n")
+                print_marked_text(
+                    "reason",
+                    f"Thinking: {text}",
+                    marker="•",
+                    marker_role="reason",
+                    body_role="reason",
+                )
 
     for item in response.output:
         if item.type != "message":
@@ -175,7 +182,13 @@ def print_response_items(
                 continue
             text = getattr(content_item, "text", "")
             if text:
-                print_title_and_content("ai", text, title="AI", title_suffix=ai_title_suffix)
+                print_marked_text(
+                    "ai",
+                    text,
+                    marker="•",
+                    marker_role="ai",
+                    body_role="",
+                )
                 history.append({"role": "assistant", "content": text})
 
     for item in response.output:
@@ -199,10 +212,12 @@ def run_tool_call(
 ) -> dict[str, str]:
     tool_name = tool_call.name
     arguments = json.loads(tool_call.arguments)
-    print_title_and_content(
+    print_marked_text(
         "tool_calling",
         format_tool_call({"name": tool_name, "args": arguments}),
-        title="Tool Calling",
+        marker="•",
+        marker_role="tool_calling",
+        body_role="",
     )
     handler = handlers.get(tool_name)
     if handler is None:
@@ -259,7 +274,7 @@ def run_tool_call(
             "output": "工具已中断",
         }
     if tool_name != "bash" and str(output).strip():
-        preview = _format_tool_output_preview(str(output), max_lines=10)
+        preview = _format_tool_output_preview(str(output), edge_lines=4)
         print_text("reason", f"{preview}\n")
         print()
     return {
@@ -311,11 +326,9 @@ def run_until_no_tool_call(
             print_text("error", "[Interrupted] 已中断本次生成。\n\n")
             return
 
-        ai_title_suffix = f"Generating {elapsed_seconds}s..."
         tool_calls = print_response_items(
             response,
             history,
-            ai_title_suffix=ai_title_suffix,
         )
         if not tool_calls:
             return
