@@ -85,6 +85,21 @@ def run_with_working_counter(callable_obj: Callable[[], Any]) -> tuple[Any | Non
     error_holder: dict[str, BaseException] = {}
     previous_sigint_handler: Any = None
     sigint_handler_installed = False
+    status_line_rendered = False
+
+    def _render_status(elapsed: int) -> None:
+        nonlocal status_line_rendered
+        status_text = (
+            f"{working_color}{THEME.body_indent}Generating {elapsed}s... (Esc to cancel){RESET}"
+        )
+        if sys.stdout.isatty():
+            if not status_line_rendered:
+                print(f"{status_text}\n", end="", flush=True)
+                status_line_rendered = True
+            else:
+                print(f"\x1b[1A\x1b[2K\r{status_text}\n", end="", flush=True)
+            return
+        print(f"\r{status_text}", end="", flush=True)
 
     def request_worker() -> None:
         try:
@@ -109,11 +124,7 @@ def run_with_working_counter(callable_obj: Callable[[], Any]) -> tuple[Any | Non
             sigint_handler_installed = False
 
     try:
-        print(
-            f"\r{working_color}{THEME.body_indent}Generating 0s... (Esc to cancel){RESET}",
-            end="",
-            flush=True,
-        )
+        _render_status(0)
         while True:
             if cancel_event.is_set():
                 return None, max(1, counter["ticks"] // 10), True
@@ -121,12 +132,7 @@ def run_with_working_counter(callable_obj: Callable[[], Any]) -> tuple[Any | Non
                 break
             counter["ticks"] += 1
             if counter["ticks"] % 10 == 0:
-                elapsed = counter["ticks"] // 10
-                print(
-                    f"\r{working_color}{THEME.body_indent}Generating {elapsed}s... (Esc to cancel){RESET}",
-                    end="",
-                    flush=True,
-                )
+                _render_status(counter["ticks"] // 10)
             if _read_cancel_key_nonblocking() == "esc":
                 return None, max(1, counter["ticks"] // 10), True
 
@@ -139,8 +145,11 @@ def run_with_working_counter(callable_obj: Callable[[], Any]) -> tuple[Any | Non
                 signal.signal(signal.SIGINT, previous_sigint_handler)
             except Exception:
                 pass
-        columns = shutil.get_terminal_size(fallback=(100, 20)).columns
-        print(f"\r{' ' * max(1, columns - 1)}\r", end="", flush=True)
+        if status_line_rendered and sys.stdout.isatty():
+            print("\x1b[1A\x1b[2K\r", end="", flush=True)
+        else:
+            columns = shutil.get_terminal_size(fallback=(100, 20)).columns
+            print(f"\r{' ' * max(1, columns - 1)}\r", end="", flush=True)
 
 
 def print_response_items(
