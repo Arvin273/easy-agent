@@ -129,19 +129,27 @@ def format_tool_call(tool_call: dict[str, Any]) -> str:
     name = str(tool_call.get("name", "unknown"))
     args = tool_call.get("args", {})
     if not args:
-        return f"tool_name: {name}"
+        return name
 
-    try:
-        args_text = json.dumps(args, ensure_ascii=False, indent=2)
-    except TypeError:
-        args_text = str(args)
+    if not isinstance(args, dict):
+        try:
+            args_text = json.dumps(args, ensure_ascii=False)
+        except TypeError:
+            args_text = str(args)
+        return f"{name}({args_text})"
 
-    arg_lines = args_text.splitlines()
-    if len(arg_lines) > 8:
-        hidden = len(arg_lines) - 8
-        args_text = "\n".join(arg_lines[:4] + [f"... ({hidden} more lines)"] + arg_lines[-4:])
+    parts: list[str] = []
+    for key, value in args.items():
+        if isinstance(value, str):
+            value_text = json.dumps(value, ensure_ascii=False)
+        else:
+            try:
+                value_text = json.dumps(value, ensure_ascii=False)
+            except TypeError:
+                value_text = str(value)
+        parts.append(f"{key}: {value_text}")
 
-    return f"tool_name: {name}\nparameters:\n{args_text}"
+    return f"{name}({', '.join(parts)})"
 
 
 def _resolve_line_width(columns: int) -> int:
@@ -202,14 +210,12 @@ def print_marked_text(
     role: str,
     content: str,
     marker: str,
-    marker_role: str | None = None,
     body_role: str | None = None,
 ) -> None:
     text = str(content or "").rstrip()
     if not text:
         return
 
-    marker_color = COLORS.get(marker_role or role, "")
     body_color = COLORS.get(role, "") if body_role is None else COLORS.get(body_role, "")
     lines = text.splitlines()
     marker_prefix = f"{marker} "
@@ -218,7 +224,7 @@ def print_marked_text(
     for index, line in enumerate(lines):
         prefix = marker_prefix if index == 0 else continuation_prefix
         if index == 0:
-            sys.stdout.write(f"{marker_color}{prefix}{RESET}{body_color}{line}{RESET}\n")
+            sys.stdout.write(f"{prefix}{RESET}{body_color}{line}{RESET}\n")
         else:
             sys.stdout.write(f"{body_color}{continuation_prefix}{line}{RESET}\n")
 
@@ -255,7 +261,7 @@ def print_startup_banner(
     inner_width = max(20, box_width - 4)
     border_color = COLORS.get("reason", "")
     key_color = COLORS.get("reason", "")
-    value_color = COLORS.get("white", "")
+    value_color = COLORS.get("", "")
     accent_color = COLORS.get("ai", "")
 
     title = "Easy Agent"

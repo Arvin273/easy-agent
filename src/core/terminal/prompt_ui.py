@@ -143,6 +143,9 @@ def _run_text_prompt(
             return
         if completion_state.complete_index is None:
             completion_state.go_to_index(0)
+            return
+        if completion_state.complete_index >= len(completion_state.completions):
+            completion_state.go_to_index(len(completion_state.completions) - 1)
 
     buffer.on_completions_changed += _ensure_first_completion
 
@@ -188,9 +191,12 @@ def _run_text_prompt(
     @bindings.add("enter", eager=True)
     def _submit_input(event: object) -> None:
         completion_state = buffer.complete_state
-        current_completion = (
-            completion_state.current_completion if completion_state is not None else None
-        )
+        current_completion = None
+        if completion_state is not None:
+            idx = completion_state.complete_index
+            completions = completion_state.completions
+            if idx is not None and 0 <= idx < len(completions):
+                current_completion = completions[idx]
         if current_completion is not None:
             buffer.apply_completion(current_completion)
         event.app.exit(result=buffer.text)

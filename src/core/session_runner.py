@@ -21,7 +21,6 @@ from core.terminal.cli_output import (
     THEME,
     format_tool_call,
     print_marked_text,
-    print_title_and_content,
     print_text,
 )
 
@@ -37,9 +36,17 @@ def normalize_tool_result(result: Any) -> str:
 
 def _format_tool_output_preview(output: str, edge_lines: int = 4) -> str:
     lines = output.splitlines()
+    if len(lines) <= 1:
+        try:
+            parsed = json.loads(output)
+        except Exception:
+            parsed = None
+        if parsed is not None:
+            pretty = json.dumps(parsed, ensure_ascii=False, indent=2)
+            lines = pretty.splitlines()
     max_lines = edge_lines * 2
     if len(lines) <= max_lines:
-        return output
+        return "\n".join(lines)
     hidden = len(lines) - max_lines
     preview_lines = lines[:edge_lines] + [f"... ({hidden} more lines)"] + lines[-edge_lines:]
     return "\n".join(preview_lines)
@@ -81,7 +88,7 @@ def _read_cancel_key_nonblocking() -> str | None:
 def run_with_working_counter(callable_obj: Callable[[], Any]) -> tuple[Any | None, int, bool]:
     done_event = threading.Event()
     cancel_event = threading.Event()
-    working_color = COLORS.get("user", "")
+    working_color = COLORS.get("reason", "")
     counter = {"ticks": 0}
     result_holder: dict[str, Any] = {}
     error_holder: dict[str, BaseException] = {}
@@ -169,8 +176,7 @@ def print_response_items(
                 print_marked_text(
                     "reason",
                     f"Thinking: {text}",
-                    marker="•",
-                    marker_role="reason",
+                    marker="🧠",
                     body_role="reason",
                 )
 
@@ -186,7 +192,6 @@ def print_response_items(
                     "ai",
                     text,
                     marker="•",
-                    marker_role="ai",
                     body_role="",
                 )
                 history.append({"role": "assistant", "content": text})
@@ -215,8 +220,7 @@ def run_tool_call(
     print_marked_text(
         "tool_calling",
         format_tool_call({"name": tool_name, "args": arguments}),
-        marker="•",
-        marker_role="tool_calling",
+        marker="🛠️",
         body_role="",
     )
     handler = handlers.get(tool_name)

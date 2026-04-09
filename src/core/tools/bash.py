@@ -4,11 +4,64 @@ import threading
 from shutil import which
 from typing import Any
 
-from core.terminal.cli_output import print_text
+from core.terminal.cli_output import ANSI_ENABLED, COLORS, RESET, THEME, print_text
 from core.tools.common import WORKDIR
 
 _ACTIVE_PROCESSES_LOCK = threading.Lock()
 _ACTIVE_PROCESSES: set[subprocess.Popen[bytes]] = set()
+
+
+def _format_live_preview(text: str, edge_lines: int = 4) -> list[str]:
+    lines = text.splitlines()
+    max_lines = edge_lines * 2
+    if len(lines) <= max_lines:
+        return lines
+    hidden = len(lines) - max_lines
+    return lines[:edge_lines] + [f"... ({hidden} more lines)"] + lines[-edge_lines:]
+
+
+class _LiveBashPreview:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._parts: list[str] = []
+        self._rendered_lines = 0
+        self._enabled = sys.stdout.isatty() and ANSI_ENABLED
+
+    def append(self, text: str) -> None:
+        if not text:
+            return
+        with self._lock:
+            self._parts.append(text)
+            if self._enabled:
+                self._render()
+            else:
+                print_text("reason", text)
+
+    def finalize(self) -> None:
+        if not self._enabled:
+            if self._parts:
+                sys.stdout.write("\n")
+                sys.stdout.flush()
+            return
+        with self._lock:
+            if self._rendered_lines:
+                sys.stdout.write("\n")
+                sys.stdout.flush()
+
+    def get_output(self) -> str:
+        with self._lock:
+            return "".join(self._parts)
+
+    def _render(self) -> None:
+        preview_lines = _format_live_preview("".join(self._parts))
+        for _ in range(self._rendered_lines):
+            sys.stdout.write("\x1b[1A\x1b[2K\r")
+
+        color = COLORS.get("reason", "")
+        for line in preview_lines:
+            sys.stdout.write(f"{color}{THEME.body_indent}{line}{RESET}\n")
+        sys.stdout.flush()
+        self._rendered_lines = len(preview_lines)
 
 
 def interrupt_running_bash() -> bool:
@@ -79,10 +132,9 @@ def run_bash(arguments: dict[str, Any]) -> str:
     with _ACTIVE_PROCESSES_LOCK:
         _ACTIVE_PROCESSES.add(process)
 
-    stdout_chunks: list[str] = []
-    stderr_chunks: list[str] = []
+    preview = _LiveBashPreview()
 
-    def stream_pipe(pipe: Any, chunks: list[str]) -> None:
+    def stream_pipe(pipe: Any) -> None:
         try:
             while True:
                 reader = getattr(pipe, "read1", None)
@@ -93,19 +145,18 @@ def run_bash(arguments: dict[str, Any]) -> str:
                 if not data:
                     break
                 text = decode_console_output(data)
-                chunks.append(text)
-                print_text("reason", text)
+                preview.append(text)
         finally:
             pipe.close()
 
     stdout_thread = threading.Thread(
         target=stream_pipe,
-        args=(process.stdout, stdout_chunks),
+        args=(process.stdout,),
         daemon=True,
     )
     stderr_thread = threading.Thread(
         target=stream_pipe,
-        args=(process.stderr, stderr_chunks),
+        args=(process.stderr,),
         daemon=True,
     )
     stdout_thread.start()
@@ -127,13 +178,8 @@ def run_bash(arguments: dict[str, Any]) -> str:
     if timed_out:
         return "Error: Timeout (120s)"
 
-    if stdout_chunks or stderr_chunks:
-        sys.stdout.write("\n")
-        sys.stdout.flush()
-
-    stdout = "".join(stdout_chunks)
-    stderr = "".join(stderr_chunks)
-    output = (stdout + stderr).strip()
+    output = preview.get_output().strip()
+    preview.finalize()
     return output[:50000] if output else "(no output)"
 
 
