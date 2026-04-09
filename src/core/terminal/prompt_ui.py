@@ -6,6 +6,7 @@ from typing import TypeVar
 from prompt_toolkit import PromptSession
 from prompt_toolkit.application import Application
 from prompt_toolkit.buffer import Buffer
+from prompt_toolkit.completion import CompleteEvent
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.filters import Condition, is_done, renderer_height_is_known
 from prompt_toolkit.formatted_text import AnyFormattedText
@@ -77,6 +78,35 @@ class SlashCommandCompleter(Completer):
         ]
 
 
+def _get_slash_menu_text(buffer: Buffer) -> str:
+    completion_state = buffer.complete_state
+    if completion_state is not None:
+        return completion_state.original_document.text
+    return buffer.text
+
+
+def _has_slash_matches(buffer: Buffer, completer: SlashCommandCompleter) -> bool:
+    return bool(completer.get_matches(_get_slash_menu_text(buffer)))
+
+
+def _is_slash_input_context(buffer: Buffer) -> bool:
+    text = buffer.text.strip()
+    return text.startswith("/") and " " not in text
+
+
+def _refresh_slash_completion(buffer: Buffer, completer: SlashCommandCompleter) -> None:
+    if not _is_slash_input_context(buffer):
+        buffer.cancel_completion()
+        return
+    if completer.get_matches(buffer.text):
+        buffer.start_completion(
+            select_first=False,
+            complete_event=CompleteEvent(text_inserted=False, completion_requested=False),
+        )
+        return
+    buffer.cancel_completion()
+
+
 def _build_text_bindings() -> KeyBindings:
     bindings = KeyBindings()
 
@@ -92,7 +122,7 @@ def _render_completion_menu(
     completer: SlashCommandCompleter,
     max_items: int = 8,
 ):
-    matches = completer.get_matches(buffer.text)
+    matches = completer.get_matches(_get_slash_menu_text(buffer))
     if not matches:
         return []
 
@@ -169,7 +199,7 @@ def _run_text_prompt(
         dont_extend_height=True,
     )
 
-    show_slash_menu = Condition(lambda: bool(completer.get_matches(buffer.text)))
+    show_slash_menu = Condition(lambda: _has_slash_matches(buffer, completer))
 
     completion_menu = ConditionalContainer(
         VSplit(
@@ -200,6 +230,30 @@ def _run_text_prompt(
     )
 
     bindings = _build_text_bindings()
+
+    @bindings.add("up", filter=show_slash_menu, eager=True)
+    def _select_previous_completion(event: object) -> None:
+        if buffer.complete_state is None:
+            _refresh_slash_completion(buffer, completer)
+        if buffer.complete_state is not None:
+            buffer.complete_previous()
+
+    @bindings.add("down", filter=show_slash_menu, eager=True)
+    def _select_next_completion(event: object) -> None:
+        if buffer.complete_state is None:
+            _refresh_slash_completion(buffer, completer)
+        if buffer.complete_state is not None:
+            buffer.complete_next()
+
+    @bindings.add("backspace", filter=Condition(lambda: _is_slash_input_context(buffer)), eager=True)
+    def _delete_and_refresh_completion(event: object) -> None:
+        buffer.delete_before_cursor(count=1)
+        _refresh_slash_completion(buffer, completer)
+
+    @bindings.add("delete", filter=Condition(lambda: _is_slash_input_context(buffer)), eager=True)
+    def _forward_delete_and_refresh_completion(event: object) -> None:
+        buffer.delete(count=1)
+        _refresh_slash_completion(buffer, completer)
 
     @bindings.add("enter", eager=True)
     def _submit_input(event: object) -> None:
