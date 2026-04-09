@@ -60,7 +60,15 @@ class AgentConfig:
 
 def _create_default_config(config_path: Path) -> None:
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    default_content = {
+    default_content = _default_config_values()
+    config_path.write_text(
+        json.dumps(default_content, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def _default_config_values() -> dict[str, str | int]:
+    return {
         "api_key": "",
         "base_url": "",
         "model": DEFAULT_MODEL,
@@ -70,10 +78,6 @@ def _create_default_config(config_path: Path) -> None:
         "min_compact_output_length": DEFAULT_MIN_COMPACT_OUTPUT_LENGTH,
         "keep_recent_messages_count": DEFAULT_KEEP_RECENT_MESSAGES_COUNT,
     }
-    config_path.write_text(
-        json.dumps(default_content, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
 
 
 def load_agent_config(config_path: Path = CONFIG_PATH) -> AgentConfig:
@@ -89,6 +93,15 @@ def load_agent_config(config_path: Path = CONFIG_PATH) -> AgentConfig:
 
     if not isinstance(config, dict):
         raise ValueError("配置文件格式错误：根节点必须是对象。")
+
+    defaults = _default_config_values()
+    has_missing_defaults = False
+    for key, default_value in defaults.items():
+        if key not in config:
+            config[key] = default_value
+            has_missing_defaults = True
+    if has_missing_defaults:
+        config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
 
     api_key = config.get("api_key")
     base_url = config.get("base_url")
@@ -119,10 +132,6 @@ def load_agent_config(config_path: Path = CONFIG_PATH) -> AgentConfig:
         raise ValueError("配置项 min_compact_output_length 必须是非负整数。")
     if not isinstance(keep_recent_messages_count, int) or keep_recent_messages_count < 0:
         raise ValueError("配置项 keep_recent_messages_count 必须是非负整数。")
-
-    if "keep_recent_messages_count" not in config:
-        config["keep_recent_messages_count"] = keep_recent_messages_count
-        config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
 
     cleaned_base_url = base_url.strip() if isinstance(base_url, str) else None
     return AgentConfig(
