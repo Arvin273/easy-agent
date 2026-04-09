@@ -4,7 +4,7 @@ from core.terminal.cli_output import (
     RESET,
     THEME,
     format_tool_call,
-    print_box,
+    print_title_and_content,
     print_startup_banner,
 )
 from core.terminal.input_reader import read_user_input
@@ -15,7 +15,7 @@ __all__ = [
     "RESET",
     "THEME",
     "format_tool_call",
-    "print_box",
+    "print_title_and_content",
     "print_startup_banner",
     "read_user_input",
 ]

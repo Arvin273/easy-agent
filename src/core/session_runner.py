@@ -20,8 +20,8 @@ from core.terminal.cli_output import (
     RESET,
     THEME,
     format_tool_call,
-    print_box,
-    print_stream_text,
+    print_title_and_content,
+    print_text,
 )
 
 
@@ -165,7 +165,7 @@ def print_response_items(
         for summary_item in item.summary or []:
             text = getattr(summary_item, "text", "")
             if text:
-                print_stream_text("reason", f"Thinking: {text}\n\n")
+                print_text("reason", f"Thinking: {text}\n\n")
 
     for item in response.output:
         if item.type != "message":
@@ -175,7 +175,7 @@ def print_response_items(
                 continue
             text = getattr(content_item, "text", "")
             if text:
-                print_box("ai", text, title="AI", title_suffix=ai_title_suffix)
+                print_title_and_content("ai", text, title="AI", title_suffix=ai_title_suffix)
                 history.append({"role": "assistant", "content": text})
 
     for item in response.output:
@@ -199,7 +199,7 @@ def run_tool_call(
 ) -> dict[str, str]:
     tool_name = tool_call.name
     arguments = json.loads(tool_call.arguments)
-    print_box(
+    print_title_and_content(
         "tool_calling",
         format_tool_call({"name": tool_name, "args": arguments}),
         title="Tool Calling",
@@ -234,11 +234,11 @@ def run_tool_call(
                     bash_tool.interrupt_running_bash()
                     break
                 if not warned_not_interruptible:
-                    print_stream_text("reason", "当前工具不支持中断，等待执行完成...\n\n")
+                    print_text("reason", "当前工具不支持中断，等待执行完成...\n\n")
                     warned_not_interruptible = True
 
         if interrupted:
-            print_stream_text("reason", "工具已中断\n\n")
+            print_text("reason", "工具已中断\n\n")
             return {
                 "type": "function_call_output",
                 "call_id": tool_call.call_id,
@@ -252,7 +252,7 @@ def run_tool_call(
 
     output = normalize_tool_result(result)
     if str(output) == "工具已中断":
-        print_stream_text("reason", "工具已中断\n\n")
+        print_text("reason", "工具已中断\n\n")
         return {
             "type": "function_call_output",
             "call_id": tool_call.call_id,
@@ -260,7 +260,7 @@ def run_tool_call(
         }
     if tool_name != "bash" and str(output).strip():
         preview = _format_tool_output_preview(str(output), max_lines=10)
-        print_stream_text("reason", f"{preview}\n")
+        print_text("reason", f"{preview}\n")
         print()
     return {
         "type": "function_call_output",
@@ -290,14 +290,14 @@ def run_until_no_tool_call(
         )
         # Layer 2: auto-compaction by token threshold.
         if estimate_tokens(history) > token_threshold:
-            print_stream_text("reason", "Compacting...\n")
+            print_text("reason", "Compacting...\n")
             history[:] = compact_history(
                 client=client,
                 model=model,
                 history=history,
                 keep_recent_messages_count=keep_recent_messages_count,
             )
-            print_stream_text("reason", "Compacted\n\n")
+            print_text("reason", "Compacted\n\n")
 
         response, elapsed_seconds, cancelled = run_with_working_counter(
             lambda: client.responses.create(
@@ -308,7 +308,7 @@ def run_until_no_tool_call(
             )
         )
         if cancelled:
-            print_stream_text("error", "[Interrupted] 已中断本次生成。\n\n")
+            print_text("error", "[Interrupted] 已中断本次生成。\n\n")
             return
 
         ai_title_suffix = f"Generating {elapsed_seconds}s..."

@@ -4,7 +4,7 @@ import threading
 from shutil import which
 from typing import Any
 
-from core.terminal.cli_output import print_stream_text
+from core.terminal.cli_output import print_text
 from core.tools.common import WORKDIR
 
 _ACTIVE_PROCESSES_LOCK = threading.Lock()
@@ -94,7 +94,7 @@ def run_bash(arguments: dict[str, Any]) -> str:
                     break
                 text = decode_console_output(data)
                 chunks.append(text)
-                print_stream_text("reason", text)
+                print_text("reason", text)
         finally:
             pipe.close()
 

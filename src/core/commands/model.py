@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 from core.config.config_manager import CONFIG_PATH, DEFAULT_EFFORT, DEFAULT_MODEL
-from core.terminal.cli_output import THEME, print_box, print_stream_text
+from core.terminal.cli_output import THEME, print_title_and_content, print_text
 
 COMMAND = "/model"
 DESCRIPTION = "切换模型与推理强度"
@@ -104,7 +104,7 @@ def _select_from_options(title: str, prompt: str, options: list[str], default_in
     if default_index < 0 or default_index >= len(options):
         default_index = 0
 
-    print_box("ai", prompt, title=title)
+    print_title_and_content("ai", prompt, title=title)
 
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         return options[default_index]
@@ -158,7 +158,7 @@ def handle() -> bool:
     try:
         payload = _load_config_payload()
     except Exception as exc:
-        print_stream_text("error", f"读取配置失败: {exc}\n")
+        print_text("error", f"读取配置失败: {exc}\n")
         return False
 
     current_model = str(payload.get("model") or DEFAULT_MODEL).strip() or DEFAULT_MODEL
@@ -190,8 +190,8 @@ def handle() -> bool:
     try:
         _save_config_payload(payload)
     except Exception as exc:
-        print_stream_text("error", f"保存配置失败: {exc}\n")
+        print_text("error", f"保存配置失败: {exc}\n")
         return False
 
-    print_box("ai", f"已切换配置:\nmodel: {model}\neffort: {effort}", title="Model Updated")
+    print_title_and_content("ai", f"已切换配置:\nmodel: {model}\neffort: {effort}", title="Model Updated")
     return False

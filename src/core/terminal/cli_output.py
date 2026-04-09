@@ -154,7 +154,7 @@ def _wrap_text(text: str, width: int) -> str:
     return "\n".join(f"{THEME.body_indent}{line}" if line else "" for line in lines)
 
 
-def print_box(
+def print_title_and_content(
     role: str,
     content: str,
     title: str | None = None,
@@ -180,7 +180,7 @@ def print_box(
     print()
 
 
-def print_stream_text(role: str, content: str) -> None:
+def print_text(role: str, content: str) -> None:
     text = str(content or "")
     if not text:
         return

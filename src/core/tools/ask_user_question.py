@@ -2,7 +2,7 @@ import json
 import sys
 from typing import Any
 
-from core.terminal.cli_output import THEME, print_box
+from core.terminal.cli_output import THEME, print_title_and_content
 
 
 def _read_selection_key() -> str:
@@ -105,7 +105,7 @@ def _ask_single_question(
     custom_option = "其他（自行输入）"
     selectable_options = options + ([custom_option] if allow_custom_input else [])
 
-    print_box(
+    print_title_and_content(
         role="user",
         title=title,
         content=f"{question_text}\n",
