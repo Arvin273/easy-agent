@@ -11,13 +11,26 @@
 
 ## 安装
 
-在本项目根目录执行：
+方式一：克隆仓库后本地安装
 
 ```bash
+# clone 后进入项目目录
 pip install -e .
 ```
 
 安装完成后会注册全局命令 `ea`。
+
+方式二：通过 Git 仓库直接安装(推荐)
+
+```bash
+pip install git+https://gitee.com/c031001/easy-agent.git
+```
+
+或：
+
+```bash
+pip install git+https://github.com/Arvin273/easy-agent.git
+```
 
 ## 启动与工作目录
 
