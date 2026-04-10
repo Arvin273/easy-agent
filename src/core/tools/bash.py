@@ -1,3 +1,4 @@
+# TODO: 优化提示词与功能
 import subprocess
 import sys
 import threading
@@ -183,12 +184,12 @@ def run_bash(arguments: dict[str, Any]) -> str:
     return output[:50000] if output else "(no output)"
 
 
-TOOL_NAME = "bash"
+TOOL_NAME = "Bash"
 TOOL_HANDLER = run_bash
 TOOL_DEF = {
     "type": "function",
     "name": TOOL_NAME,
-    "description": "在工作区内执行一个 shell 命令，并返回标准输出和标准错误输出。",
+    "description": "执行一条 shell 命令，并返回标准输出和标准错误输出。",
     "parameters": {
         "type": "object",
         "properties": {

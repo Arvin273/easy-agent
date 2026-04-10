@@ -1,6 +1,6 @@
 from typing import Any
 
-from core.tools.common import safe_path
+from core.tools.common import resolve_path
 
 
 def run_read_file(arguments: dict[str, Any]) -> str:
@@ -20,7 +20,7 @@ def run_read_file(arguments: dict[str, Any]) -> str:
         raise ValueError("limit 参数不能小于 0。")
 
     try:
-        file_path = safe_path(path_str)
+        file_path = resolve_path(path_str)
         effective_start_line = start_line or 1
         effective_limit = limit if limit is not None else 200
 
@@ -39,9 +39,7 @@ def run_read_file(arguments: dict[str, Any]) -> str:
                             continue
                         if len(rendered_lines) >= effective_limit:
                             continue
-                        rendered_lines.append(
-                            f"{total_lines} | {line.rstrip(chr(10)).rstrip(chr(13))}"
-                        )
+                        rendered_lines.append(f"{total_lines}\t{line.rstrip(chr(10)).rstrip(chr(13))}")
                 break
             except UnicodeDecodeError:
                 rendered_lines = []
@@ -65,16 +63,25 @@ def run_read_file(arguments: dict[str, Any]) -> str:
         return f"Error: {exc}"
 
 
-TOOL_NAME = "read_file"
+TOOL_NAME = "Read"
 TOOL_HANDLER = run_read_file
 TOOL_DEF = {
     "type": "function",
     "name": TOOL_NAME,
-    "description": "读取工作区内文件内容，可选返回前若干行。",
+    "description": (
+        "读取本地文件系统中的文件内容。"
+        "你可以通过这个工具直接读取任意文件；如果传入的文件不存在，工具会返回错误。"
+        "\n\n"
+        "使用规则：\n"
+        "- 可以通过 start_line 和 limit 指定读取范围；文件较长时建议这样做\n"
+        "- 返回结果格式为“行号 + 制表符 + 内容”\n"
+        "- 这个工具只能读取文件，不能读取目录；要查看目录请使用 bash 工具\n"
+        "- 如果读取到空文件，会返回明确提示\n"
+    ),
     "parameters": {
         "type": "object",
         "properties": {
-            "path": {"type": "string", "description": "工作区内的相对文件路径"},
+            "path": {"type": "string", "description": "文件绝对路径或相对路径"},
             "start_line": {
                 "type": ["integer", "null"],
                 "description": "起始行号，从 1 开始；null 表示从第一行开始",

@@ -125,7 +125,7 @@ def run_ask_user_question(arguments: dict[str, Any]) -> dict[str, str]:
     return {"output": display_text}
 
 
-TOOL_NAME = "ask_user_question"
+TOOL_NAME = "AskUserQuestion"
 TOOL_HANDLER = run_ask_user_question
 TOOL_DEF = {
     "type": "function",
