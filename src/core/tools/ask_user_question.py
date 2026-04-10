@@ -2,6 +2,7 @@ from typing import Any
 
 from core.terminal.cli_output import THEME, print_title_and_content, Colors
 from core.terminal.prompt_ui import read_text, select_option
+from core.tools.common import parse_optional_int
 
 
 def _select_option(options: list[str], default_index: int) -> int:
@@ -78,7 +79,6 @@ def run_ask_user_question(arguments: dict[str, Any]) -> dict[str, str]:
             raise ValueError("questions 中每一项都必须是对象。")
         question_text = item.get("question")
         options = item.get("options")
-        default_index = item.get("default_index", 0)
         question_title = item.get("title")
         question_id = item.get("id") or f"q{idx}"
 
@@ -90,8 +90,9 @@ def run_ask_user_question(arguments: dict[str, Any]) -> dict[str, str]:
             raise ValueError("questions[].options 中每一项都必须是非空字符串。")
         if len(options) > 20:
             raise ValueError("questions[].options 最多支持 20 项。")
-        if not isinstance(default_index, int):
-            raise ValueError("questions[].default_index 必须是整数。")
+        default_index = parse_optional_int(item.get("default_index", 0), "questions[].default_index")
+        if default_index is None:
+            default_index = 0
         if not isinstance(question_title, str) or not question_title.strip():
             raise ValueError("questions[].title 必须是非空字符串。")
         if not isinstance(question_id, str) or not question_id.strip():

@@ -1,22 +1,18 @@
 from typing import Any
 
-from core.tools.common import resolve_path
+from core.tools.common import parse_optional_int, resolve_path
 
 
 def run_read_file(arguments: dict[str, Any]) -> str:
     path_str = arguments.get("path")
-    start_line = arguments.get("start_line")
-    limit = arguments.get("limit")
 
     if not isinstance(path_str, str) or not path_str.strip():
         raise ValueError("缺少有效的 path 参数。")
-    if start_line is not None and not isinstance(start_line, int):
-        raise ValueError("start_line 参数必须是整数。")
-    if isinstance(start_line, int) and start_line < 1:
+    start_line = parse_optional_int(arguments.get("start_line"), "start_line")
+    limit = parse_optional_int(arguments.get("limit"), "limit")
+    if start_line is not None and start_line < 1:
         raise ValueError("start_line 参数不能小于 1。")
-    if limit is not None and not isinstance(limit, int):
-        raise ValueError("limit 参数必须是整数。")
-    if isinstance(limit, int) and limit < 0:
+    if limit is not None and limit < 0:
         raise ValueError("limit 参数不能小于 0。")
 
     try:
