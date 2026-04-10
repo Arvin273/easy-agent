@@ -6,7 +6,7 @@ from core.config.config_manager import load_agent_config
 from core.context.agents_instructions import load_agents_system_messages
 from core.context.skill_manager import SkillManager
 from core.session_runner import run_until_no_tool_call
-from core.terminal.cli_output import print_title_and_content, print_startup_banner, print_text, Colors
+from core.terminal.cli_output import print_startup_banner, print_text, Colors
 from core.terminal.prompt_ui import read_user_input
 from core.commands import get_slash_command_descriptions, handle_slash_command
 from core.tools import ToolRegistry
@@ -163,4 +163,4 @@ def main() -> None:
 if __name__ == "__main__":
     main()
 
-# TODO: TodoWrite subagents backgroundtask
+# TODO: TodoWrite subagents backgroundtask 优化提示词 强化工具
