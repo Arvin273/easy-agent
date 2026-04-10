@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import time
 from typing import TypeVar
 
 from prompt_toolkit import PromptSession
@@ -109,10 +110,21 @@ def _refresh_slash_completion(buffer: Buffer, completer: SlashCommandCompleter) 
 
 def _build_text_bindings() -> KeyBindings:
     bindings = KeyBindings()
+    last_escape_at = {"value": 0.0}
 
     @bindings.add("c-u")
     def _clear_current_input(event: object) -> None:
         event.current_buffer.reset()
+
+    @bindings.add("escape", eager=True)
+    def _handle_escape(event: object) -> None:
+        now = time.monotonic()
+        if now - last_escape_at["value"] <= 0.5:
+            event.current_buffer.reset()
+            last_escape_at["value"] = 0.0
+            return
+        last_escape_at["value"] = now
+        event.current_buffer.cancel_completion()
 
     return bindings
 

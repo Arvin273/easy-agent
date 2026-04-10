@@ -35,6 +35,13 @@ def normalize_tool_result(result: Any) -> str:
     return str(result)
 
 
+def _truncate_preview_line(line: str, max_width: int = 160) -> str:
+    if len(line) <= max_width:
+        return line
+    hidden = len(line) - max_width
+    return f"{line[:max_width]}... ({hidden} more chars)"
+
+
 def _format_tool_output_preview(output: str, edge_lines: int = 4) -> str:
     lines = output.splitlines()
     if len(lines) <= 1:
@@ -45,6 +52,7 @@ def _format_tool_output_preview(output: str, edge_lines: int = 4) -> str:
         if parsed is not None:
             pretty = json.dumps(parsed, ensure_ascii=False, indent=2)
             lines = pretty.splitlines()
+    lines = [_truncate_preview_line(line) for line in lines]
     max_lines = edge_lines * 2
     if len(lines) <= max_lines:
         return "\n".join(lines)

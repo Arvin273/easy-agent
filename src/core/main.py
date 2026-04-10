@@ -1,7 +1,7 @@
 from typing import Any
 
 import httpx
-from openai import APIError, OpenAI
+from openai import OpenAI
 from core.config.config_manager import load_agent_config
 from core.context.agents_instructions import load_agents_system_messages
 from core.context.skill_manager import SkillManager
@@ -166,9 +166,10 @@ TODO:
 1. 添加TodoWrite工具
 2. 添加subagents功能
 3. 增强Bash tool、支持后台任务、安全问题
-4. 添加Glob Grep WebFetch WebSearch 这四个tool
+4. WebFetch WebSearch 这四个tool
 5. 增强提示词
 6. 添加更多slash命令
+9. 为不同平台添加rg
 7. *MCP
 8. *权限
 """

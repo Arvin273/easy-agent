@@ -13,6 +13,12 @@ from core.tools.common import WORKDIR
 from core.tools.edit_file import TOOL_DEF as EDIT_FILE_TOOL_DEF
 from core.tools.edit_file import TOOL_HANDLER as EDIT_FILE_TOOL_HANDLER
 from core.tools.edit_file import TOOL_NAME as EDIT_FILE_TOOL_NAME
+from core.tools.glob import TOOL_DEF as GLOB_TOOL_DEF
+from core.tools.glob import TOOL_HANDLER as GLOB_TOOL_HANDLER
+from core.tools.glob import TOOL_NAME as GLOB_TOOL_NAME
+from core.tools.grep import TOOL_DEF as GREP_TOOL_DEF
+from core.tools.grep import TOOL_HANDLER as GREP_TOOL_HANDLER
+from core.tools.grep import TOOL_NAME as GREP_TOOL_NAME
 from core.tools.read_file import TOOL_DEF as READ_FILE_TOOL_DEF
 from core.tools.read_file import TOOL_HANDLER as READ_FILE_TOOL_HANDLER
 from core.tools.read_file import TOOL_NAME as READ_FILE_TOOL_NAME
@@ -28,6 +34,8 @@ TOOL_HANDLERS = {
     READ_FILE_TOOL_NAME: READ_FILE_TOOL_HANDLER,
     WRITE_FILE_TOOL_NAME: WRITE_FILE_TOOL_HANDLER,
     EDIT_FILE_TOOL_NAME: EDIT_FILE_TOOL_HANDLER,
+    GLOB_TOOL_NAME: GLOB_TOOL_HANDLER,
+    GREP_TOOL_NAME: GREP_TOOL_HANDLER,
     ASK_USER_QUESTION_TOOL_NAME: ASK_USER_QUESTION_TOOL_HANDLER,
 }
 
@@ -36,6 +44,8 @@ TOOLS = [
     READ_FILE_TOOL_DEF,
     WRITE_FILE_TOOL_DEF,
     EDIT_FILE_TOOL_DEF,
+    GLOB_TOOL_DEF,
+    GREP_TOOL_DEF,
     ASK_USER_QUESTION_TOOL_DEF,
 ]
 

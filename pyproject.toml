@@ -17,6 +17,10 @@ ea = "core.main:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
+include-package-data = true
+
+[tool.setuptools.package-data]
+core = ["vendor/ripgrep/**/*"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
