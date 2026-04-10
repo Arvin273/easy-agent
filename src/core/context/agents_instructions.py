@@ -16,21 +16,26 @@ def _read_agents_file(path: Path) -> str | None:
 
 
 def load_agents_system_messages() -> list[dict[str, str]]:
-    messages: list[dict[str, str]] = []
+    sections: list[str] = []
     candidates = [
-        ("应用数据目录", PATHS.app_dir / "AGENTS.md"),
-        ("当前工作目录", PATHS.workdir / "AGENTS.md"),
+        ("用户级指令", PATHS.app_dir / "AGENTS.md"),
+        ("项目级指令", PATHS.workdir / "AGENTS.md"),
     ]
 
-    for source_name, path in candidates:
+    for label, path in candidates:
         content = _read_agents_file(path)
         if not content:
             continue
-        messages.append(
-            {
-                "role": "system",
-                "content": f"以下是来自{source_name}的 AGENTS.md 指令，请严格遵守：\n\n{content}",
-            }
-        )
+        sections.append(f"{label}：\n{content}")
 
-    return messages
+    if not sections:
+        return []
+
+    merged = (
+        "你在回答用户问题时，必须严格遵守这些指令：\n"
+        f"{'\n\n'.join(sections)}\n\n"
+        "重要：这些指令可能会覆盖默认行为，你必须完全遵守。\n"
+        "重要：这些上下文不一定和当前任务相关。只有在它们和当前任务高度相关时，才在回答中体现。\n"
+        "重要：如果用户级指令和项目级指令存在冲突，请以项目级指令为准。\n"
+    )
+    return [{"role": "system", "content": merged}]

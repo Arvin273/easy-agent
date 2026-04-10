@@ -157,29 +157,35 @@ class SkillManager:
             return ""
 
         lines = [
-            "[Skills]",
-            "你可以使用以下 skills（来源：当前工作目录和家目录的 .ea/skills）：",
+            "你可以使用 Skill tool 加载以下skills：",
         ]
         for skill in skills:
             desc = skill.description if skill.description else "(no description)"
             lines.append(f"- name: {skill.name}; description: {desc}")
-        lines.append(
-            "当用户请求明显匹配某个 skill 时，优先调用 read_skill 先读取该 skill 的 SKILL.md 再执行。"
-        )
         return "\n".join(lines)
 
     def get_tools(self) -> list[dict[str, Any]]:
         return [
             {
                 "type": "function",
-                "name": "read_skill",
-                "description": "读取指定 skill 的 SKILL.md 内容。",
+                "name": "Skill",
+                "description": (
+                    "用于读取某个Skill的SKILL.md的内容"
+                    "\n\n"
+                    "重要规则: \n"
+                    "当用户要求你执行任务时，检查是否有可用的技能与之匹配。技能提供了专用能力和领域知识。\n"
+                    "当用户提到 “斜杠命令” 或 “/< 某个名称 >”（例如 /commit、/review-pr）时，他们指的就是技能。使用此工具来调用它。\n"
+                    "可用技能列表会在对话的系统提示词中给出\n"
+                    "当某个技能与用户请求匹配时，这是强制性要求：必须先调用对应的 Skill 工具，再对任务生成其他任何回复\n"
+                    "永远不要只提及某个技能，却不实际调用此工具\n"
+                    "不要调用已经加载过的技能\n"
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "name": {
                             "type": "string",
-                            "description": "skill 名称（目录名），例如 docker 或 rag-cli",
+                            "description": "skill 名称",
                         }
                     },
                     "required": ["name"],
@@ -189,7 +195,7 @@ class SkillManager:
         ]
 
     def get_handlers(self) -> dict[str, Callable[[dict[str, Any]], Any]]:
-        return {"read_skill": self.run_read_skill}
+        return {"Skill": self.run_read_skill}
 
     def refresh(self) -> bool:
         old_stamp = self._cache_stamp

@@ -1,4 +1,3 @@
-# TODO: 优化提示词与功能
 import subprocess
 import sys
 import threading

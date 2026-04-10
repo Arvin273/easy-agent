@@ -18,10 +18,9 @@ TOOL_REGISTRY = ToolRegistry(SKILL_MANAGER)
 def build_system_prompt(skill_manager: SkillManager) -> str:
     skill_section = skill_manager.build_system_section()
     system_prompt = (
-        "你是一个agent。"
-        "你可以调用工具来解决问题。"
+        "你是一个运行在用户电脑上的Agent。"
+        "你可以调用各种工具来解决用户的问题。"
         "在调用工具时，务必生成一段文字来说明你要做什么。"
-        "当你不确定下一步该怎么做时，优先调用 ask_user_question 向用户提问并等待选择。"
     )
     if skill_section:
         return f"{system_prompt}\n\n{skill_section}"
@@ -40,11 +39,7 @@ def refresh_tools_and_system_prompt(history: list[dict[str, Any] | Any]) -> None
 def _is_agents_system_message(message: dict[str, Any] | Any) -> bool:
     if not isinstance(message, dict):
         return False
-    if message.get("role") != "system":
-        return False
-    content = message.get("content")
-    return isinstance(content, str) and content.startswith("以下是来自") and "AGENTS.md 指令，请严格遵守：" in content
-
+    return message.get("role") == "system"
 
 def refresh_agents_system_messages(history: list[dict[str, Any] | Any]) -> None:
     if not history:
@@ -163,4 +158,13 @@ def main() -> None:
 if __name__ == "__main__":
     main()
 
-# TODO: TodoWrite subagents backgroundtask 优化提示词 强化工具
+"""
+TODO: 
+1. 添加TodoWrite工具
+2. 添加subagents功能
+3. 增强Bash tool、支持后台任务、安全问题
+4. 添加Glob Grep WebFetch WebSearch 这四个tool
+5. 增强提示词
+6. *MCP
+7. *权限
+"""
