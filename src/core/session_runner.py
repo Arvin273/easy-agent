@@ -10,6 +10,7 @@ from typing import Any, Callable
 from openai import OpenAI
 
 import core.tools.bash as bash_tool
+from core.tools.bash import TOOL_NAME as BASH_TOOL_NAME
 from core.context.compression import (
     compact_history,
     estimate_tokens,
@@ -248,7 +249,7 @@ def run_tool_call(
             if done_event.wait(0.1):
                 break
             if _read_cancel_key_nonblocking() == "esc":
-                if tool_name == "bash":
+                if tool_name == BASH_TOOL_NAME:
                     interrupted = True
                     bash_tool.interrupt_running_bash()
                     break
@@ -277,7 +278,7 @@ def run_tool_call(
             "call_id": tool_call.call_id,
             "output": "工具已中断",
         }
-    if tool_name != "bash" and str(output).strip():
+    if tool_name != BASH_TOOL_NAME and str(output).strip():
         preview = _format_tool_output_preview(str(output), edge_lines=3)
         print_text(Colors.reason, f"{preview}\n")
         print()

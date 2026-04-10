@@ -1,12 +1,12 @@
 from typing import Any
 
 import httpx
-from openai import OpenAI
+from openai import APIError, OpenAI
 from core.config.config_manager import load_agent_config
 from core.context.agents_instructions import load_agents_system_messages
 from core.context.skill_manager import SkillManager
 from core.session_runner import run_until_no_tool_call
-from core.terminal.cli_output import print_startup_banner, print_text, Colors
+from core.terminal.cli_output import print_startup_banner, print_text, Colors, print_marked_text
 from core.terminal.prompt_ui import read_user_input
 from core.commands import get_slash_command_descriptions, handle_slash_command
 from core.tools import ToolRegistry
@@ -150,6 +150,9 @@ def main() -> None:
                 keep_recent_messages_count=config.keep_recent_messages_count,
                 history=history,
             )
+        except Exception as exc:
+            print_marked_text(content=str(exc) + '\n\n', marker="■", body_color=Colors.error, marker_color=Colors.error)
+            continue
         except KeyboardInterrupt:
             print()
             continue
@@ -165,6 +168,7 @@ TODO:
 3. 增强Bash tool、支持后台任务、安全问题
 4. 添加Glob Grep WebFetch WebSearch 这四个tool
 5. 增强提示词
-6. *MCP
-7. *权限
+6. 添加更多slash命令
+7. *MCP
+8. *权限
 """

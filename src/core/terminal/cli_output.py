@@ -141,6 +141,7 @@ def _wrap_text(text: str, width: int) -> str:
     return "\n".join(f"{THEME.body_indent}{line}" if line else "" for line in lines)
 
 
+# 这个方法后面需要手动加\n\n
 def print_title_and_content(
     color: str,
     content: str | None = None,
@@ -160,6 +161,7 @@ def print_title_and_content(
     print(body)
 
 
+# 这个方法后面需要手动加\n\n
 def print_text(color: str, content: str) -> None:
     text = str(content or "")
     if not text:
