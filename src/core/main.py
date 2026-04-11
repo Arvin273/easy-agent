@@ -49,6 +49,13 @@ def refresh_agents_system_messages(history: list[dict[str, Any] | Any]) -> None:
     history[:] = [*base_message, *load_agents_system_messages(), *other_messages]
 
 
+def get_prompt_command_descriptions() -> dict[str, str]:
+    descriptions = get_slash_command_descriptions()
+    for skill in SKILL_MANAGER.discover_skills():
+        descriptions[f"${skill.name}"] = skill.description or "(no description)"
+    return descriptions
+
+
 def agent_loop(
     client: OpenAI,
     model: str,
@@ -90,7 +97,7 @@ def main() -> None:
         model=config.model,
         effort=config.effort,
         directory=SKILL_MANAGER.workdir.as_posix(),
-        command_descriptions=get_slash_command_descriptions(),
+        command_descriptions=get_prompt_command_descriptions(),
     )
 
     system_prompt = build_system_prompt(SKILL_MANAGER)
@@ -108,7 +115,7 @@ def main() -> None:
             query = read_user_input(
                 "> ",
                 history=input_history,
-                command_descriptions=get_slash_command_descriptions(),
+                command_descriptions=get_prompt_command_descriptions(),
             ).strip()
         except (EOFError, KeyboardInterrupt):
             print()
@@ -163,13 +170,11 @@ if __name__ == "__main__":
 
 """
 TODO: 
-1. 添加TodoWrite工具
-2. 添加subagents功能
-3. 增强Bash tool、支持后台任务、安全问题
-4. WebFetch WebSearch 这四个tool
-5. 增强提示词
-6. 添加更多slash命令
-9. 为不同平台添加rg
-7. *MCP
-8. *权限
+1. 增强Bash tool、支持后台任务、安全问题
+2. WebSearch 这四个tool
+3. 增强提示词
+4. 添加更多slash命令
+5. 为不同平台添加rg
+6. *MCP
+7. *权限
 """

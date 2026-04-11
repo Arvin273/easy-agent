@@ -53,7 +53,7 @@ def _build_history(history: list[str] | None = None) -> InMemoryHistory:
     return prompt_history
 
 
-class SlashCommandCompleter(Completer):
+class PrefixCommandCompleter(Completer):
     def __init__(self, command_descriptions: dict[str, str]) -> None:
         self._command_descriptions = dict(sorted(command_descriptions.items()))
 
@@ -69,7 +69,9 @@ class SlashCommandCompleter(Completer):
 
     def get_matches(self, text: str) -> list[tuple[str, str]]:
         normalized = text.strip()
-        if not normalized.startswith("/") or " " in normalized:
+        if not normalized or " " in normalized:
+            return []
+        if not (normalized.startswith("/") or normalized.startswith("$")):
             return []
         prefix = normalized.lower()
         return [
@@ -79,24 +81,29 @@ class SlashCommandCompleter(Completer):
         ]
 
 
-def _get_slash_menu_text(buffer: Buffer) -> str:
+def _get_completion_menu_text(buffer: Buffer) -> str:
     completion_state = buffer.complete_state
     if completion_state is not None:
         return completion_state.original_document.text
     return buffer.text
 
 
-def _has_slash_matches(buffer: Buffer, completer: SlashCommandCompleter) -> bool:
-    return bool(completer.get_matches(_get_slash_menu_text(buffer)))
+def _has_completion_matches(buffer: Buffer, completer: PrefixCommandCompleter) -> bool:
+    return bool(completer.get_matches(_get_completion_menu_text(buffer)))
 
 
-def _is_slash_input_context(buffer: Buffer) -> bool:
+def _is_prefix_input_context(buffer: Buffer) -> bool:
     text = buffer.text.strip()
-    return text.startswith("/") and " " not in text
+    return (text.startswith("/") or text.startswith("$")) and " " not in text
 
 
-def _refresh_slash_completion(buffer: Buffer, completer: SlashCommandCompleter) -> None:
-    if not _is_slash_input_context(buffer):
+def _is_dollar_skill_selection_context(buffer: Buffer) -> bool:
+    text = buffer.text.strip()
+    return text.startswith("$") and " " not in text
+
+
+def _refresh_completion(buffer: Buffer, completer: PrefixCommandCompleter) -> None:
+    if not _is_prefix_input_context(buffer):
         buffer.cancel_completion()
         return
     if completer.get_matches(buffer.text):
@@ -131,10 +138,10 @@ def _build_text_bindings() -> KeyBindings:
 
 def _render_completion_menu(
     buffer: Buffer,
-    completer: SlashCommandCompleter,
+    completer: PrefixCommandCompleter,
     max_items: int = 8,
 ):
-    matches = completer.get_matches(_get_slash_menu_text(buffer))
+    matches = completer.get_matches(_get_completion_menu_text(buffer))
     if not matches:
         return []
 
@@ -211,7 +218,7 @@ def _run_text_prompt(
         dont_extend_height=True,
     )
 
-    show_slash_menu = Condition(lambda: _has_slash_matches(buffer, completer))
+    show_completion_menu = Condition(lambda: _has_completion_matches(buffer, completer))
 
     completion_menu = ConditionalContainer(
         VSplit(
@@ -227,7 +234,7 @@ def _run_text_prompt(
                 ),
             ]
         ),
-        filter=show_slash_menu,
+        filter=show_completion_menu,
     )
 
     layout = Layout(
@@ -243,32 +250,33 @@ def _run_text_prompt(
 
     bindings = _build_text_bindings()
 
-    @bindings.add("up", filter=show_slash_menu, eager=True)
+    @bindings.add("up", filter=show_completion_menu, eager=True)
     def _select_previous_completion(event: object) -> None:
         if buffer.complete_state is None:
-            _refresh_slash_completion(buffer, completer)
+            _refresh_completion(buffer, completer)
         if buffer.complete_state is not None:
             buffer.complete_previous()
 
-    @bindings.add("down", filter=show_slash_menu, eager=True)
+    @bindings.add("down", filter=show_completion_menu, eager=True)
     def _select_next_completion(event: object) -> None:
         if buffer.complete_state is None:
-            _refresh_slash_completion(buffer, completer)
+            _refresh_completion(buffer, completer)
         if buffer.complete_state is not None:
             buffer.complete_next()
 
-    @bindings.add("backspace", filter=Condition(lambda: _is_slash_input_context(buffer)), eager=True)
+    @bindings.add("backspace", filter=Condition(lambda: _is_prefix_input_context(buffer)), eager=True)
     def _delete_and_refresh_completion(event: object) -> None:
         buffer.delete_before_cursor(count=1)
-        _refresh_slash_completion(buffer, completer)
+        _refresh_completion(buffer, completer)
 
-    @bindings.add("delete", filter=Condition(lambda: _is_slash_input_context(buffer)), eager=True)
+    @bindings.add("delete", filter=Condition(lambda: _is_prefix_input_context(buffer)), eager=True)
     def _forward_delete_and_refresh_completion(event: object) -> None:
         buffer.delete(count=1)
-        _refresh_slash_completion(buffer, completer)
+        _refresh_completion(buffer, completer)
 
     @bindings.add("enter", eager=True)
     def _submit_input(event: object) -> None:
+        stripped_text = buffer.text.strip()
         completion_state = buffer.complete_state
         current_completion = None
         if completion_state is not None:
@@ -276,8 +284,23 @@ def _run_text_prompt(
             completions = completion_state.completions
             if idx is not None and 0 <= idx < len(completions):
                 current_completion = completions[idx]
+        if _is_dollar_skill_selection_context(buffer):
+            matches = completer.get_matches(stripped_text)
+            if any(command == stripped_text for command, _ in matches):
+                event.app.exit(result=buffer.text)
+                return
         if current_completion is not None:
+            if _is_dollar_skill_selection_context(buffer):
+                completed_text = f"{current_completion.text} "
+                buffer.set_document(
+                    Document(text=completed_text, cursor_position=len(completed_text)),
+                    bypass_readonly=True,
+                )
+                buffer.cancel_completion()
+                return
             buffer.apply_completion(current_completion)
+        if _is_dollar_skill_selection_context(buffer):
+            return
         event.app.exit(result=buffer.text)
 
     @bindings.add("c-c")
@@ -308,7 +331,7 @@ def read_text(
     prompt_history = _build_history(history)
     completer = None
     if command_descriptions:
-        completer = SlashCommandCompleter(command_descriptions)
+        completer = PrefixCommandCompleter(command_descriptions)
     result = _run_text_prompt(
         prompt=prompt,
         default=default,
