@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from core.tools.common import WORKDIR, resolve_path
@@ -37,13 +36,11 @@ TOOL_HANDLER = run_glob
 TOOL_DEF = {
     "type": "function",
     "name": TOOL_NAME,
-    # TODO：必须实现Agent工具
     "description": (
         "- 快速文件模式匹配工具，适用于任意规模的代码库\n"
         "- 支持像 \"**/*.js\" 或 \"src/**/*.ts\" 这样的 glob 模式\n"
         "- 返回按修改时间排序的匹配文件路径\n"
         "- 当你需要按名称模式查找文件时，使用这个工具\n"
-        "- 当你在做可能需要多轮 glob 和 grep 的开放式搜索时，使用 Agent 工具替代\n"
     ),
     "parameters": {
         "type": "object",

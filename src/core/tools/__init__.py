@@ -22,6 +22,9 @@ from core.tools.grep import TOOL_NAME as GREP_TOOL_NAME
 from core.tools.read_file import TOOL_DEF as READ_FILE_TOOL_DEF
 from core.tools.read_file import TOOL_HANDLER as READ_FILE_TOOL_HANDLER
 from core.tools.read_file import TOOL_NAME as READ_FILE_TOOL_NAME
+from core.tools.web_fetch import TOOL_DEF as WEB_FETCH_TOOL_DEF
+from core.tools.web_fetch import TOOL_HANDLER as WEB_FETCH_TOOL_HANDLER
+from core.tools.web_fetch import TOOL_NAME as WEB_FETCH_TOOL_NAME
 from core.tools.write_file import TOOL_DEF as WRITE_FILE_TOOL_DEF
 from core.tools.write_file import TOOL_HANDLER as WRITE_FILE_TOOL_HANDLER
 from core.tools.write_file import TOOL_NAME as WRITE_FILE_TOOL_NAME
@@ -36,6 +39,7 @@ TOOL_HANDLERS = {
     EDIT_FILE_TOOL_NAME: EDIT_FILE_TOOL_HANDLER,
     GLOB_TOOL_NAME: GLOB_TOOL_HANDLER,
     GREP_TOOL_NAME: GREP_TOOL_HANDLER,
+    WEB_FETCH_TOOL_NAME: WEB_FETCH_TOOL_HANDLER,
     ASK_USER_QUESTION_TOOL_NAME: ASK_USER_QUESTION_TOOL_HANDLER,
 }
 
@@ -46,6 +50,7 @@ TOOLS = [
     EDIT_FILE_TOOL_DEF,
     GLOB_TOOL_DEF,
     GREP_TOOL_DEF,
+    WEB_FETCH_TOOL_DEF,
     ASK_USER_QUESTION_TOOL_DEF,
 ]
 
