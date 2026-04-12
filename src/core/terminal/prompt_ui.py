@@ -88,8 +88,32 @@ def _get_completion_menu_text(buffer: Buffer) -> str:
     return buffer.text
 
 
+def _has_valid_completion_state(buffer: Buffer) -> bool:
+    completion_state = buffer.complete_state
+    if completion_state is None:
+        return False
+    completions = completion_state.completions
+    if not completions:
+        return False
+    index = completion_state.complete_index
+    if index is None:
+        return True
+    return 0 <= index < len(completions)
+
+
 def _has_completion_matches(buffer: Buffer, completer: PrefixCommandCompleter) -> bool:
     return bool(completer.get_matches(_get_completion_menu_text(buffer)))
+
+
+def _clear_completion_state(buffer: Buffer) -> None:
+    buffer.complete_state = None
+
+
+def _cancel_completion_safely(buffer: Buffer) -> None:
+    if _has_valid_completion_state(buffer):
+        buffer.cancel_completion()
+        return
+    _clear_completion_state(buffer)
 
 
 def _is_prefix_input_context(buffer: Buffer) -> bool:
@@ -104,7 +128,7 @@ def _is_dollar_skill_selection_context(buffer: Buffer) -> bool:
 
 def _refresh_completion(buffer: Buffer, completer: PrefixCommandCompleter) -> None:
     if not _is_prefix_input_context(buffer):
-        buffer.cancel_completion()
+        _cancel_completion_safely(buffer)
         return
     if completer.get_matches(buffer.text):
         buffer.start_completion(
@@ -112,7 +136,31 @@ def _refresh_completion(buffer: Buffer, completer: PrefixCommandCompleter) -> No
             complete_event=CompleteEvent(text_inserted=False, completion_requested=False),
         )
         return
-    buffer.cancel_completion()
+    _cancel_completion_safely(buffer)
+
+
+def _ensure_valid_completion_navigation(buffer: Buffer, completer: PrefixCommandCompleter) -> bool:
+    if not _is_prefix_input_context(buffer):
+        _cancel_completion_safely(buffer)
+        return False
+    if not _has_completion_matches(buffer, completer):
+        _cancel_completion_safely(buffer)
+        return False
+    if not _has_valid_completion_state(buffer):
+        _refresh_completion(buffer, completer)
+    if not _has_valid_completion_state(buffer):
+        _clear_completion_state(buffer)
+        return False
+    return True
+
+
+def _apply_selected_completion(buffer: Buffer, completion: Completion) -> None:
+    completed_text = completion.text
+    buffer.set_document(
+        Document(text=completed_text, cursor_position=len(completed_text)),
+        bypass_readonly=True,
+    )
+    _clear_completion_state(buffer)
 
 
 def _build_text_bindings() -> KeyBindings:
@@ -131,7 +179,7 @@ def _build_text_bindings() -> KeyBindings:
             last_escape_at["value"] = 0.0
             return
         last_escape_at["value"] = now
-        event.current_buffer.cancel_completion()
+        _cancel_completion_safely(event.current_buffer)
 
     return bindings
 
@@ -252,16 +300,12 @@ def _run_text_prompt(
 
     @bindings.add("up", filter=show_completion_menu, eager=True)
     def _select_previous_completion(event: object) -> None:
-        if buffer.complete_state is None:
-            _refresh_completion(buffer, completer)
-        if buffer.complete_state is not None:
+        if _ensure_valid_completion_navigation(buffer, completer):
             buffer.complete_previous()
 
     @bindings.add("down", filter=show_completion_menu, eager=True)
     def _select_next_completion(event: object) -> None:
-        if buffer.complete_state is None:
-            _refresh_completion(buffer, completer)
-        if buffer.complete_state is not None:
+        if _ensure_valid_completion_navigation(buffer, completer):
             buffer.complete_next()
 
     @bindings.add("backspace", filter=Condition(lambda: _is_prefix_input_context(buffer)), eager=True)
@@ -290,13 +334,8 @@ def _run_text_prompt(
                 event.app.exit(result=buffer.text)
                 return
         if current_completion is not None:
-            if _is_dollar_skill_selection_context(buffer):
-                completed_text = f"{current_completion.text} "
-                buffer.set_document(
-                    Document(text=completed_text, cursor_position=len(completed_text)),
-                    bypass_readonly=True,
-                )
-                buffer.cancel_completion()
+            if _is_prefix_input_context(buffer):
+                _apply_selected_completion(buffer, current_completion)
                 return
             buffer.apply_completion(current_completion)
         if _is_dollar_skill_selection_context(buffer):

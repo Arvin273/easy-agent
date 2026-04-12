@@ -1,14 +1,35 @@
+from __future__ import annotations
+
+import codecs
+import json
+import os
 import subprocess
 import sys
 import threading
+import time
+from dataclasses import dataclass, field
+from datetime import datetime
+from functools import lru_cache
+from itertools import count
 from shutil import which
 from typing import Any
 
-from core.terminal.cli_output import ANSI_ENABLED, RESET, THEME, print_text, Colors
-from core.tools.common import WORKDIR
+from core.terminal.cli_output import ANSI_ENABLED, RESET, THEME, Colors, print_text
+from core.tools.common import WORKDIR, parse_optional_int
+
+DEFAULT_TIMEOUT_MS = 120_000
+DEFAULT_BACKGROUND_TIMEOUT_MS = 600_000
+MAX_TIMEOUT_MS = 600_000
+MAX_OUTPUT_CHARS = 50_000
+MAX_PREVIEW_CHARS = 12_000
+PREVIEW_EDGE_LINES = 3
 
 _ACTIVE_PROCESSES_LOCK = threading.Lock()
 _ACTIVE_PROCESSES: set[subprocess.Popen[bytes]] = set()
+
+_BACKGROUND_TASKS_LOCK = threading.Lock()
+_BACKGROUND_TASKS: dict[str, "_BackgroundTaskState"] = {}
+_BACKGROUND_TASK_COUNTER = count(1)
 
 
 def _format_live_preview(text: str, edge_lines: int = 4) -> list[str]:
@@ -20,10 +41,179 @@ def _format_live_preview(text: str, edge_lines: int = 4) -> list[str]:
     return lines[:edge_lines] + [f"... ({hidden} more lines)"] + lines[-edge_lines:]
 
 
-class _LiveBashPreview:
-    def __init__(self) -> None:
+def _coerce_timeout_ms(value: Any) -> int:
+    timeout = parse_optional_int(value, "timeout")
+    if timeout is None:
+        return DEFAULT_TIMEOUT_MS
+    if timeout <= 0:
+        raise ValueError("timeout 必须大于 0。")
+    if timeout > MAX_TIMEOUT_MS:
+        raise ValueError(f"timeout 不能超过 {MAX_TIMEOUT_MS} 毫秒。")
+    return timeout
+
+
+def _resolve_timeout_ms(value: Any, *, run_in_background: bool) -> int:
+    if value is None:
+        return DEFAULT_BACKGROUND_TIMEOUT_MS if run_in_background else DEFAULT_TIMEOUT_MS
+    return _coerce_timeout_ms(value)
+
+
+def _coerce_bool(value: Any, field_name: str) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, bool):
+        return value
+    raise ValueError(f"{field_name} 参数必须是布尔值。")
+
+
+def _build_bash_env() -> dict[str, str]:
+    env = os.environ.copy()
+    has_utf8_locale = False
+    for env_name in ("LC_ALL", "LANG"):
+        env_value = env.get(env_name, "").strip().lower()
+        if "utf-8" in env_value or "utf8" in env_value:
+            has_utf8_locale = True
+            break
+    if not has_utf8_locale:
+        env["LANG"] = "C.UTF-8"
+        env["LC_ALL"] = "C.UTF-8"
+    return env
+
+
+@lru_cache(maxsize=1)
+def _resolve_bash_executable() -> str:
+    if sys.platform.startswith("win"):
+        where_result = subprocess.run(
+            ["where", "bash"],
+            cwd=WORKDIR,
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
+        for raw_line in where_result.stdout.splitlines():
+            line = raw_line.decode("utf-8", errors="replace").strip()
+            if line:
+                return line
+    else:
+        bash_path = which("bash")
+        if bash_path:
+            return bash_path
+    raise RuntimeError("Error: 未找到 bash 可执行文件。")
+
+
+def _start_bash_process(command: str) -> subprocess.Popen[bytes]:
+    kwargs: dict[str, Any] = {
+        "cwd": WORKDIR,
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.STDOUT,
+        "bufsize": 0,
+        "env": _build_bash_env(),
+    }
+    if sys.platform.startswith("win"):
+        kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        kwargs["start_new_session"] = True
+    return subprocess.Popen([_resolve_bash_executable(), "-lc", command], **kwargs)
+
+
+def _terminate_process_tree(process: subprocess.Popen[bytes]) -> None:
+    if process.poll() is not None:
+        return
+    if sys.platform.startswith("win"):
+        subprocess.run(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            cwd=WORKDIR,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        return
+    try:
+        os.killpg(process.pid, 15)
+    except ProcessLookupError:
+        return
+    except Exception:
+        process.kill()
+        return
+    try:
+        process.wait(timeout=1)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(process.pid, 9)
+        except ProcessLookupError:
+            return
+
+
+class _OutputBuffer:
+    def __init__(self, max_output_chars: int = MAX_OUTPUT_CHARS, max_preview_chars: int = MAX_PREVIEW_CHARS) -> None:
         self._lock = threading.Lock()
-        self._parts: list[str] = []
+        self._max_output_chars = max_output_chars
+        self._max_preview_chars = max_preview_chars
+        self._output_parts: list[str] = []
+        self._output_len = 0
+        self._output_truncated = False
+        self._preview_parts: list[str] = []
+        self._preview_len = 0
+        self._preview_truncated = False
+        self._preview_head = ""
+        self._preview_tail = ""
+
+    def append(self, text: str) -> None:
+        if not text:
+            return
+        with self._lock:
+            self._append_output(text)
+            self._append_preview(text)
+
+    def get_output(self) -> str:
+        with self._lock:
+            text = "".join(self._output_parts)
+            if self._output_truncated:
+                text += "\n[output truncated]"
+            return text
+
+    def get_preview_text(self) -> str:
+        with self._lock:
+            if not self._preview_truncated:
+                return "".join(self._preview_parts)
+            return f"{self._preview_head}\n... [preview truncated] ...\n{self._preview_tail}"
+
+    def _append_output(self, text: str) -> None:
+        if self._output_truncated:
+            return
+        remaining = self._max_output_chars - self._output_len
+        if remaining <= 0:
+            self._output_truncated = True
+            return
+        chunk = text[:remaining]
+        self._output_parts.append(chunk)
+        self._output_len += len(chunk)
+        if len(chunk) < len(text):
+            self._output_truncated = True
+
+    def _append_preview(self, text: str) -> None:
+        if not self._preview_truncated and self._preview_len + len(text) <= self._max_preview_chars:
+            self._preview_parts.append(text)
+            self._preview_len += len(text)
+            return
+
+        if not self._preview_truncated:
+            combined = "".join(self._preview_parts) + text
+            keep = self._max_preview_chars // 2
+            self._preview_head = combined[:keep]
+            self._preview_tail = combined[-keep:]
+            self._preview_parts.clear()
+            self._preview_truncated = True
+            return
+
+        keep = self._max_preview_chars // 2
+        self._preview_tail = (self._preview_tail + text)[-keep:]
+
+
+class _LiveBashPreview:
+    def __init__(self, output_buffer: _OutputBuffer) -> None:
+        self._lock = threading.Lock()
+        self._buffer = output_buffer
         self._rendered_lines = 0
         self._enabled = sys.stdout.isatty() and ANSI_ENABLED
 
@@ -31,7 +221,6 @@ class _LiveBashPreview:
         if not text:
             return
         with self._lock:
-            self._parts.append(text)
             if self._enabled:
                 self._render()
             else:
@@ -39,7 +228,7 @@ class _LiveBashPreview:
 
     def finalize(self) -> None:
         if not self._enabled:
-            if self._parts:
+            if self._buffer.get_preview_text():
                 sys.stdout.write("\n")
                 sys.stdout.flush()
             return
@@ -48,20 +237,81 @@ class _LiveBashPreview:
                 sys.stdout.write("\n")
                 sys.stdout.flush()
 
-    def get_output(self) -> str:
-        with self._lock:
-            return "".join(self._parts)
-
     def _render(self) -> None:
-        preview_lines = _format_live_preview("".join(self._parts), edge_lines=3)
+        preview_lines = _format_live_preview(self._buffer.get_preview_text(), edge_lines=PREVIEW_EDGE_LINES)
         for _ in range(self._rendered_lines):
             sys.stdout.write("\x1b[1A\x1b[2K\r")
 
-        color = Colors.reason
         for line in preview_lines:
-            sys.stdout.write(f"{color}{THEME.body_indent}{line}{RESET}\n")
+            sys.stdout.write(f"{Colors.reason}{THEME.body_indent}{line}{RESET}\n")
         sys.stdout.flush()
         self._rendered_lines = len(preview_lines)
+
+
+@dataclass
+class _BackgroundTaskState:
+    task_id: str
+    command: str
+    description: str
+    started_at: float
+    process: subprocess.Popen[bytes]
+    output_buffer: _OutputBuffer = field(default_factory=_OutputBuffer)
+    history_injected: bool = False
+    status: str = "running"
+    return_code: int | None = None
+    finished_at: float | None = None
+    timeout_ms: int = DEFAULT_BACKGROUND_TIMEOUT_MS
+
+    def snapshot(self, include_output: bool = False) -> dict[str, Any]:
+        data = {
+            "task_id": self.task_id,
+            "command": self.command,
+            "description": self.description,
+            "status": self.status,
+            "return_code": self.return_code,
+            "started_at": datetime.fromtimestamp(self.started_at).isoformat(timespec="seconds"),
+            "finished_at": (
+                datetime.fromtimestamp(self.finished_at).isoformat(timespec="seconds")
+                if self.finished_at is not None
+                else None
+            ),
+        }
+        output = self.output_buffer.get_output().strip()
+        preview = "\n".join(_format_live_preview(output, edge_lines=PREVIEW_EDGE_LINES)) if output else ""
+        data["preview"] = preview
+        if include_output:
+            data["output"] = output
+        return data
+
+
+def _read_process_output(
+    process: subprocess.Popen[bytes],
+    output_buffer: _OutputBuffer,
+    live_preview: _LiveBashPreview | None = None,
+) -> None:
+    pipe = process.stdout
+    if pipe is None:
+        return
+
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+
+    try:
+        while True:
+            data = pipe.read(4096)
+            if not data:
+                break
+            text = decoder.decode(data)
+            if text:
+                output_buffer.append(text)
+                if live_preview is not None:
+                    live_preview.append(text)
+        tail = decoder.decode(b"", final=True)
+        if tail:
+            output_buffer.append(tail)
+            if live_preview is not None:
+                live_preview.append(tail)
+    finally:
+        pipe.close()
 
 
 def interrupt_running_bash() -> bool:
@@ -70,117 +320,180 @@ def interrupt_running_bash() -> bool:
         processes = list(_ACTIVE_PROCESSES)
     for process in processes:
         try:
-            process.kill()
+            _terminate_process_tree(process)
             interrupted = True
         except Exception:
             continue
     return interrupted
 
 
-def run_bash(arguments: dict[str, Any]) -> str:
-    def decode_console_output(data: bytes) -> str:
-        for encoding in ("utf-8", "gbk", "cp936"):
-            try:
-                return data.decode(encoding)
-            except UnicodeDecodeError:
-                continue
-        return data.decode("utf-8", errors="replace")
+def _run_foreground_process(
+    process: subprocess.Popen[bytes],
+    timeout_ms: int,
+) -> str:
+    output_buffer = _OutputBuffer()
+    preview = _LiveBashPreview(output_buffer)
+    reader_thread = threading.Thread(
+        target=_read_process_output,
+        args=(process, output_buffer, preview),
+        daemon=True,
+    )
 
-    def resolve_bash_executable() -> str:
-        if sys.platform.startswith("win"):
-            where_result = subprocess.run(
-                ["where", "bash"],
-                cwd=WORKDIR,
-                capture_output=True,
-                timeout=10,
-            )
-            lines = [
-                line.strip()
-                for line in decode_console_output(where_result.stdout).splitlines()
-                if line.strip()
-            ]
-            if lines:
-                return lines[0]
+    with _ACTIVE_PROCESSES_LOCK:
+        _ACTIVE_PROCESSES.add(process)
+
+    reader_thread.start()
+    timed_out = False
+    try:
+        process.wait(timeout=timeout_ms / 1000)
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        _terminate_process_tree(process)
+    finally:
+        with _ACTIVE_PROCESSES_LOCK:
+            _ACTIVE_PROCESSES.discard(process)
+        reader_thread.join(timeout=2)
+        preview.finalize()
+
+    if timed_out:
+        seconds = timeout_ms / 1000
+        return f"Error: Timeout ({seconds:g}s)"
+
+    output = output_buffer.get_output().strip()
+    return output if output else "(no output)"
+
+
+def _monitor_background_task(task_id: str) -> None:
+    with _BACKGROUND_TASKS_LOCK:
+        task = _BACKGROUND_TASKS.get(task_id)
+    if task is None:
+        return
+
+    reader_thread = threading.Thread(
+        target=_read_process_output,
+        args=(task.process, task.output_buffer, None),
+        daemon=True,
+    )
+    reader_thread.start()
+    timed_out = False
+    try:
+        task.process.wait(timeout=task.timeout_ms / 1000)
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        _terminate_process_tree(task.process)
+    reader_thread.join(timeout=2)
+
+    with _BACKGROUND_TASKS_LOCK:
+        current = _BACKGROUND_TASKS.get(task_id)
+        if current is None:
+            return
+        current.return_code = task.process.returncode
+        current.finished_at = time.time()
+        if timed_out:
+            current.status = "timed_out"
+        elif task.process.returncode == 0:
+            current.status = "completed"
         else:
-            bash_path = which("bash")
-            if bash_path:
-                return bash_path
-        raise RuntimeError("Error: Unable to locate bash executable")
+            current.status = "failed"
 
+
+def _start_background_task(command: str, description: str, timeout_ms: int) -> str:
+    process = _start_bash_process(command)
+    task_id = f"bash-{next(_BACKGROUND_TASK_COUNTER)}"
+    state = _BackgroundTaskState(
+        task_id=task_id,
+        command=command,
+        description=description,
+        started_at=time.time(),
+        process=process,
+        timeout_ms=timeout_ms,
+    )
+    with _BACKGROUND_TASKS_LOCK:
+        _BACKGROUND_TASKS[task_id] = state
+    monitor_thread = threading.Thread(target=_monitor_background_task, args=(task_id,), daemon=True)
+    monitor_thread.start()
+    return task_id
+
+
+def consume_completed_background_bash_tasks_for_history() -> list[dict[str, Any]]:
+    completed: list[dict[str, Any]] = []
+    with _BACKGROUND_TASKS_LOCK:
+        for task in _BACKGROUND_TASKS.values():
+            if task.status == "running" or task.history_injected:
+                continue
+            task.history_injected = True
+            completed.append(task.snapshot(include_output=True))
+    completed.sort(key=lambda item: item["task_id"])
+    return completed
+
+
+def get_background_bash_tasks(
+    *,
+    task_id: str | None = None,
+    status: str | None = None,
+    include_output: bool = False,
+) -> list[dict[str, Any]]:
+    with _BACKGROUND_TASKS_LOCK:
+        tasks = list(_BACKGROUND_TASKS.values())
+
+    if task_id is not None:
+        tasks = [task for task in tasks if task.task_id == task_id]
+    if status is not None:
+        tasks = [task for task in tasks if task.status == status]
+
+    snapshots = [task.snapshot(include_output=include_output) for task in tasks]
+    snapshots.sort(key=lambda item: item["task_id"])
+    return snapshots
+
+
+def run_bash(arguments: dict[str, Any]) -> str:
     command = arguments.get("command")
     if not isinstance(command, str) or not command.strip():
         raise ValueError("缺少有效的 command 参数。")
 
-    dangerous = ["rm -rf /", "sudo", "shutdown", "reboot", "> /dev/"]
-    if any(item in command for item in dangerous):
-        return "Error: Dangerous command blocked"
+    description_value = arguments.get("description")
+    description = command.strip()
+    if description_value is not None:
+        if not isinstance(description_value, str):
+            raise ValueError("description 参数必须是字符串。")
+        if description_value.strip():
+            description = description_value.strip()
+
+    run_in_background = _coerce_bool(arguments.get("run_in_background"), "run_in_background")
+    timeout_ms = _resolve_timeout_ms(arguments.get("timeout"), run_in_background=run_in_background)
 
     try:
-        bash_executable = resolve_bash_executable()
-        process = subprocess.Popen(
-            [bash_executable, "-lc", command],
-            cwd=WORKDIR,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            bufsize=0,
-        )
+        if run_in_background:
+            task_id = _start_background_task(command, description, timeout_ms)
+            return f"Started background bash task {task_id}"
+        process = _start_bash_process(command)
     except RuntimeError as exc:
         return str(exc)
     except Exception as exc:
         return f"Error: {exc}"
 
-    with _ACTIVE_PROCESSES_LOCK:
-        _ACTIVE_PROCESSES.add(process)
+    return _run_foreground_process(process, timeout_ms)
 
-    preview = _LiveBashPreview()
 
-    def stream_pipe(pipe: Any) -> None:
-        try:
-            while True:
-                reader = getattr(pipe, "read1", None)
-                if callable(reader):
-                    data = reader(1024)
-                else:
-                    data = pipe.read(1024)
-                if not data:
-                    break
-                text = decode_console_output(data)
-                preview.append(text)
-        finally:
-            pipe.close()
+def run_bash_jobs(arguments: dict[str, Any]) -> str:
+    task_id = arguments.get("task_id")
+    status = arguments.get("status")
+    include_output = _coerce_bool(arguments.get("include_output"), "include_output")
 
-    stdout_thread = threading.Thread(
-        target=stream_pipe,
-        args=(process.stdout,),
-        daemon=True,
+    if task_id is not None and not isinstance(task_id, str):
+        raise ValueError("task_id 参数必须是字符串。")
+    if status is not None:
+        if not isinstance(status, str):
+            raise ValueError("status 参数必须是字符串。")
+        if status not in {"running", "completed", "failed", "timed_out"}:
+            raise ValueError("status 只能是 running、completed、failed 或 timed_out。")
+
+    tasks = get_background_bash_tasks(
+        task_id=task_id.strip() if isinstance(task_id, str) and task_id.strip() else None,
+        status=status,
+        include_output=include_output,
     )
-    stderr_thread = threading.Thread(
-        target=stream_pipe,
-        args=(process.stderr,),
-        daemon=True,
-    )
-    stdout_thread.start()
-    stderr_thread.start()
-
-    timed_out = False
-    try:
-        process.wait(timeout=120)
-    except subprocess.TimeoutExpired:
-        timed_out = True
-        process.kill()
-    finally:
-        with _ACTIVE_PROCESSES_LOCK:
-            _ACTIVE_PROCESSES.discard(process)
-
-    stdout_thread.join(timeout=1)
-    stderr_thread.join(timeout=1)
-
-    if timed_out:
-        return "Error: Timeout (120s)"
-
-    output = preview.get_output().strip()
-    preview.finalize()
-    return output[:50000] if output else "(no output)"
+    return json.dumps({"tasks": tasks}, ensure_ascii=False, indent=2)
 
 
 TOOL_NAME = "Bash"
@@ -188,13 +501,42 @@ TOOL_HANDLER = run_bash
 TOOL_DEF = {
     "type": "function",
     "name": TOOL_NAME,
-    "description": "执行一条 shell 命令，并返回标准输出和标准错误输出。",
+        "description": (
+            "执行一条 bash 命令，并返回输出。"
+            "工作目录固定为当前项目目录。"
+            "支持可选的 timeout（毫秒，前台默认 120000，后台默认 600000，最大 600000）、description 和 run_in_background。"
+            "涉及查文件、读文件、写文件、搜索内容时，优先使用专门工具，不要滥用 Bash。"
+        ),
     "parameters": {
         "type": "object",
         "properties": {
-            "command": {"type": "string", "description": "要执行的 shell 命令"},
+            "command": {"type": "string", "description": "要执行的 bash 命令"},
+            "timeout": {"type": "number", "description": "可选超时时间，单位毫秒"},
+            "description": {"type": "string", "description": "命令用途说明，便于终端展示和后台任务查看"},
+            "run_in_background": {"type": "boolean", "description": "是否作为后台任务启动，默认 false"},
         },
         "required": ["command"],
+        "additionalProperties": False,
+    },
+}
+
+JOBS_TOOL_NAME = "BashJobs"
+JOBS_TOOL_HANDLER = run_bash_jobs
+JOBS_TOOL_DEF = {
+    "type": "function",
+    "name": JOBS_TOOL_NAME,
+    "description": "查询后台 Bash 任务状态。可列出所有任务，也可按 task_id 或 status 过滤，并可选择返回完整输出。",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "task_id": {"type": "string", "description": "可选，指定后台任务 ID，例如 bash-1"},
+            "status": {
+                "type": "string",
+                "enum": ["running", "completed", "failed", "timed_out"],
+                "description": "可选，按任务状态过滤",
+            },
+            "include_output": {"type": "boolean", "description": "是否返回完整输出，默认 false"},
+        },
         "additionalProperties": False,
     },
 }

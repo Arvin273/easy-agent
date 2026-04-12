@@ -61,6 +61,41 @@ def _format_tool_output_preview(output: str, edge_lines: int = 4) -> str:
     return "\n".join(preview_lines)
 
 
+def _should_print_tool_output_preview(tool_name: str, output: str) -> bool:
+    stripped = str(output).strip()
+    if not stripped:
+        return False
+    if tool_name != BASH_TOOL_NAME:
+        return True
+    return (
+        stripped.startswith("Error:")
+        or stripped == "(no output)"
+        or stripped.startswith("Started background bash task ")
+    )
+
+
+def _inject_completed_background_jobs(history: list[dict[str, Any] | Any]) -> None:
+    completed_tasks = bash_tool.consume_completed_background_bash_tasks_for_history()
+    if not completed_tasks:
+        return
+
+    lines = ["后台 Bash 任务状态更新："]
+    for task in completed_tasks:
+        lines.extend(
+            [
+                f"- task_id: {task['task_id']}",
+                f"  status: {task.get('status', '-')}",
+                f"  return_code: {task.get('return_code', '-')}",
+                f"  description: {task.get('description') or task.get('command') or '-'}",
+            ]
+        )
+        output = str(task.get("output") or "").strip()
+        if output:
+            preview = _format_tool_output_preview(output, edge_lines=2)
+            lines.extend(["  output:", preview])
+    history.append({"role": "user", "content": "\n".join(lines)})
+
+
 def _read_cancel_key_nonblocking() -> str | None:
     if sys.platform.startswith("win"):
         import msvcrt
@@ -286,7 +321,7 @@ def run_tool_call(
             "call_id": tool_call.call_id,
             "output": "工具已中断",
         }
-    if tool_name != BASH_TOOL_NAME and str(output).strip():
+    if _should_print_tool_output_preview(tool_name, str(output)):
         preview = _format_tool_output_preview(str(output), edge_lines=3)
         print_text(Colors.reason, f"{preview}\n")
         print()
@@ -310,6 +345,7 @@ def run_until_no_tool_call(
     handlers: dict[str, Callable[[dict[str, Any]], Any]],
 ) -> None:
     while True:
+        _inject_completed_background_jobs(history)
         # Layer 1: lightweight compaction before each model call.
         micro_compact(
             history,

@@ -7,13 +7,14 @@ from typing import Callable
 from openai import OpenAI
 
 from core.commands import compact as compact_command
-from core.terminal.cli_output import print_title_and_content, print_text, Colors
 from core.commands import exit as exit_command
 from core.commands import help as help_command
+from core.commands import jobs as jobs_command
 from core.commands import model as model_command
 from core.commands import skills as skills_command
 from core.commands import tokens as tokens_command
 from core.context.skill_manager import SkillManager
+from core.terminal.cli_output import Colors, print_text
 
 
 @dataclass(frozen=True)
@@ -24,10 +25,12 @@ class SlashCommandContext:
     history: list[dict[str, Any] | Any] | None
     keep_recent_messages_count: int
     token_threshold: int
+    args: list[str]
 
 
 SLASH_COMMANDS = {
     help_command.COMMAND: help_command.DESCRIPTION,
+    jobs_command.COMMAND: jobs_command.DESCRIPTION,
     skills_command.COMMAND: skills_command.DESCRIPTION,
     model_command.COMMAND: model_command.DESCRIPTION,
     compact_command.COMMAND: compact_command.DESCRIPTION,
@@ -38,6 +41,10 @@ SLASH_COMMANDS = {
 
 def _handle_help(_: SlashCommandContext) -> bool:
     return help_command.handle(SLASH_COMMANDS)
+
+
+def _handle_jobs(context: SlashCommandContext) -> bool:
+    return jobs_command.handle(context.args)
 
 
 def _handle_skills(context: SlashCommandContext) -> bool:
@@ -67,6 +74,7 @@ def _handle_exit(_: SlashCommandContext) -> bool:
 
 COMMAND_HANDLERS: dict[str, Callable[[SlashCommandContext], bool]] = {
     help_command.COMMAND: _handle_help,
+    jobs_command.COMMAND: _handle_jobs,
     skills_command.COMMAND: _handle_skills,
     model_command.COMMAND: _handle_model,
     compact_command.COMMAND: _handle_compact,
@@ -88,7 +96,10 @@ def handle_slash_command(
     keep_recent_messages_count: int = 0,
     token_threshold: int = 0,
 ) -> bool:
-    command = query.lower()
+    parts = query.strip().split()
+    if not parts:
+        return False
+    command = parts[0].lower()
     handler = COMMAND_HANDLERS.get(command)
     if handler is not None:
         context = SlashCommandContext(
@@ -98,6 +109,7 @@ def handle_slash_command(
             history=history,
             keep_recent_messages_count=keep_recent_messages_count,
             token_threshold=token_threshold,
+            args=parts[1:],
         )
         return handler(context)
     print_text(Colors.error, f"Unknown slash command: {query}。输入 /help 查看可用命令。\n\n")

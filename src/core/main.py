@@ -80,7 +80,6 @@ def agent_loop(
         handlers=bundle.handlers,
     )
 
-
 def main() -> None:
     try:
         config = load_agent_config()
@@ -171,7 +170,7 @@ if __name__ == "__main__":
 """
 TODO: 
 1. 增强Bash tool、支持后台任务、安全问题
-2. WebSearch 这四个tool
+2. 添加 WebSearch 这个tool
 3. 增强提示词
 4. 添加更多slash命令
 5. 为不同平台添加rg
