@@ -256,7 +256,6 @@ class _BackgroundTaskState:
     started_at: float
     process: subprocess.Popen[bytes]
     output_buffer: _OutputBuffer = field(default_factory=_OutputBuffer)
-    history_injected: bool = False
     status: str = "running"
     return_code: int | None = None
     finished_at: float | None = None
@@ -413,18 +412,6 @@ def _start_background_task(command: str, description: str, timeout_ms: int) -> s
     monitor_thread = threading.Thread(target=_monitor_background_task, args=(task_id,), daemon=True)
     monitor_thread.start()
     return task_id
-
-
-def consume_completed_background_bash_tasks_for_history() -> list[dict[str, Any]]:
-    completed: list[dict[str, Any]] = []
-    with _BACKGROUND_TASKS_LOCK:
-        for task in _BACKGROUND_TASKS.values():
-            if task.status == "running" or task.history_injected:
-                continue
-            task.history_injected = True
-            completed.append(task.snapshot(include_output=True))
-    completed.sort(key=lambda item: item["task_id"])
-    return completed
 
 
 def get_background_bash_tasks(

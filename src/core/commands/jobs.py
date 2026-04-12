@@ -55,7 +55,7 @@ def handle(args: list[str]) -> bool:
         return False
 
     if task_id is None and not include_output:
-        lines = ["后台 Bash 任务:"]
+        lines = []
         for task in tasks:
             desc = str(task.get("description") or task.get("command") or "").strip()
             status = str(task.get("status") or "-")
