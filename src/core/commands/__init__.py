@@ -6,7 +6,9 @@ from typing import Callable
 
 from openai import OpenAI
 
+from core.commands import clear as clear_command
 from core.commands import compact as compact_command
+from core.commands import config as config_command
 from core.commands import exit as exit_command
 from core.commands import help as help_command
 from core.commands import jobs as jobs_command
@@ -29,6 +31,8 @@ class SlashCommandContext:
 
 
 SLASH_COMMANDS = {
+    config_command.COMMAND: config_command.DESCRIPTION,
+    clear_command.COMMAND: clear_command.DESCRIPTION,
     help_command.COMMAND: help_command.DESCRIPTION,
     jobs_command.COMMAND: jobs_command.DESCRIPTION,
     skills_command.COMMAND: skills_command.DESCRIPTION,
@@ -41,6 +45,14 @@ SLASH_COMMANDS = {
 
 def _handle_help(_: SlashCommandContext) -> bool:
     return help_command.handle(SLASH_COMMANDS)
+
+
+def _handle_config(_: SlashCommandContext) -> bool:
+    return config_command.handle()
+
+
+def _handle_clear(context: SlashCommandContext) -> bool:
+    return clear_command.handle(context.history)
 
 
 def _handle_jobs(context: SlashCommandContext) -> bool:
@@ -73,6 +85,8 @@ def _handle_exit(_: SlashCommandContext) -> bool:
 
 
 COMMAND_HANDLERS: dict[str, Callable[[SlashCommandContext], bool]] = {
+    config_command.COMMAND: _handle_config,
+    clear_command.COMMAND: _handle_clear,
     help_command.COMMAND: _handle_help,
     jobs_command.COMMAND: _handle_jobs,
     skills_command.COMMAND: _handle_skills,
