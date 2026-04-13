@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sys
-import time
 from typing import TypeVar
 
 from prompt_toolkit import PromptSession
@@ -165,23 +164,26 @@ def _apply_selected_completion(buffer: Buffer, completion: Completion) -> None:
 
 def _build_text_bindings() -> KeyBindings:
     bindings = KeyBindings()
-    last_escape_at = {"value": 0.0}
 
     @bindings.add("c-u")
     def _clear_current_input(event: object) -> None:
         event.current_buffer.reset()
 
-    @bindings.add("escape", eager=True)
-    def _handle_escape(event: object) -> None:
-        now = time.monotonic()
-        if now - last_escape_at["value"] <= 0.5:
-            event.current_buffer.reset()
-            last_escape_at["value"] = 0.0
+    @bindings.add("c-c")
+    @bindings.add("<sigint>")
+    def _handle_ctrl_c(event: object) -> None:
+        if _clear_input_on_interrupt(event.current_buffer):
             return
-        last_escape_at["value"] = now
-        _cancel_completion_safely(event.current_buffer)
+        event.app.exit(exception=KeyboardInterrupt())
 
     return bindings
+
+
+def _clear_input_on_interrupt(buffer: Buffer) -> bool:
+    if not buffer.text:
+        return False
+    buffer.reset()
+    return True
 
 
 def _render_completion_menu(
@@ -341,11 +343,6 @@ def _run_text_prompt(
         if _is_dollar_skill_selection_context(buffer):
             return
         event.app.exit(result=buffer.text)
-
-    @bindings.add("c-c")
-    @bindings.add("<sigint>")
-    def _interrupt(event: object) -> None:
-        event.app.exit(exception=KeyboardInterrupt())
 
     app = Application(
         layout=layout,

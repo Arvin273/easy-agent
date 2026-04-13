@@ -346,6 +346,7 @@ def run_until_no_tool_call(
                 input=history,
                 tools=tools,
                 reasoning={"effort": effort, "summary": "auto"},
+                store=True
             )
         )
         if cancelled:
