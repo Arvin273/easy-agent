@@ -35,12 +35,20 @@ class AppPaths:
         return self.app_dir / "skills"
 
     @property
+    def home_mcp_config_path(self) -> Path:
+        return self.app_dir / "mcp.json"
+
+    @property
     def local_ea_dir(self) -> Path:
         return self.workdir / ".ea"
 
     @property
     def local_skills_dir(self) -> Path:
         return self.local_ea_dir / "skills"
+
+    @property
+    def local_mcp_config_path(self) -> Path:
+        return self.local_ea_dir / "mcp.json"
 
 
 PATHS = AppPaths(workdir=Path.cwd(), home=Path.home())
@@ -91,6 +99,17 @@ def _create_default_config(config_path: Path) -> None:
     )
 
 
+def _create_default_mcp_config(config_path: Path) -> None:
+    try:
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(
+            json.dumps({"mcp_servers": []}, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except OSError:
+        return
+
+
 def _persist_config_if_possible(config_path: Path, config: dict[str, Any]) -> None:
     try:
         config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -108,7 +127,6 @@ def _default_config_values() -> dict[str, str | int | list[Any]]:
         "keep_recent_tool_outputs": DEFAULT_KEEP_RECENT_TOOL_OUTPUTS,
         "min_compact_output_length": DEFAULT_MIN_COMPACT_OUTPUT_LENGTH,
         "keep_recent_messages_count": DEFAULT_KEEP_RECENT_MESSAGES_COUNT,
-        "mcp_servers": [],
     }
 
 
@@ -198,6 +216,35 @@ def _parse_mcp_servers(value: Any) -> list[MCPServerConfig]:
     return servers
 
 
+def _load_single_mcp_config(path: Path) -> list[MCPServerConfig]:
+    if not path.exists():
+        return []
+    if not path.is_file():
+        raise FileNotFoundError(f"MCP 配置路径不是文件: {path}")
+
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise ValueError(f"MCP 配置文件解析失败: {path}: {exc}") from exc
+
+    if isinstance(raw, list):
+        return _parse_mcp_servers(raw)
+    if isinstance(raw, dict):
+        return _parse_mcp_servers(raw.get("mcp_servers"))
+    raise ValueError(f"MCP 配置文件格式错误: {path}，根节点必须是对象或数组。")
+
+
+def load_mcp_servers(paths: AppPaths | None = None) -> list[MCPServerConfig]:
+    active_paths = paths or PATHS
+    if not active_paths.home_mcp_config_path.exists():
+        _create_default_mcp_config(active_paths.home_mcp_config_path)
+    servers_by_name: dict[str, MCPServerConfig] = {}
+    for path in (active_paths.home_mcp_config_path, active_paths.local_mcp_config_path):
+        for server in _load_single_mcp_config(path):
+            servers_by_name[server.name] = server
+    return list(servers_by_name.values())
+
+
 def load_agent_config(config_path: Path = CONFIG_PATH) -> AgentConfig:
     if not config_path.exists():
         _create_default_config(config_path)
@@ -229,7 +276,6 @@ def load_agent_config(config_path: Path = CONFIG_PATH) -> AgentConfig:
     keep_recent_tool_outputs = config.get("keep_recent_tool_outputs", DEFAULT_KEEP_RECENT_TOOL_OUTPUTS)
     min_compact_output_length = config.get("min_compact_output_length", DEFAULT_MIN_COMPACT_OUTPUT_LENGTH)
     keep_recent_messages_count = config.get("keep_recent_messages_count")
-    mcp_servers = _parse_mcp_servers(config.get("mcp_servers"))
     if keep_recent_messages_count is None:
         keep_recent_messages_count = config.get("keep_recent_messages_days", DEFAULT_KEEP_RECENT_MESSAGES_COUNT)
 
@@ -262,5 +308,5 @@ def load_agent_config(config_path: Path = CONFIG_PATH) -> AgentConfig:
         keep_recent_tool_outputs=keep_recent_tool_outputs,
         min_compact_output_length=min_compact_output_length,
         keep_recent_messages_count=keep_recent_messages_count,
-        mcp_servers=mcp_servers,
+        mcp_servers=load_mcp_servers(),
     )

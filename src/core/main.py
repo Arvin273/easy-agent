@@ -18,9 +18,11 @@ TOOL_REGISTRY = ToolRegistry(SKILL_MANAGER)
 def build_system_prompt(skill_manager: SkillManager) -> str:
     skill_section = skill_manager.build_system_section()
     system_prompt = (
-        "你是一个运行在用户电脑上的Agent。"
-        "你可以调用各种工具来解决用户的问题。"
-        "在调用工具时，务必生成一段文字来说明你要做什么。"
+        "你是一个运行在用户电脑上的终端 Agent。你的名字叫Easy-Agent。"
+        "你的目标是优先基于当前工作目录和可用工具，直接完成用户任务。"
+        "当问题可以直接回答时，直接回答；当需要查看文件、搜索内容、执行命令或修改内容时，再调用工具。"
+        "每次调用工具前，先用一句简短的话说明你接下来要做什么以及目的。"
+        "回答保持简洁、直接，避免空泛描述。"
     )
     if skill_section:
         return f"{system_prompt}\n\n{skill_section}"
