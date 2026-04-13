@@ -135,6 +135,7 @@ def main() -> None:
                 should_exit = handle_slash_command(
                     query,
                     SKILL_MANAGER,
+                    TOOL_REGISTRY,
                     client=client,
                     model=config.model,
                     history=history,

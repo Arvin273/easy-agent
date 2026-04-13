@@ -182,6 +182,7 @@ MCP 不再写在 `~/.ea/config.json` 中，而是独立写在两个位置：
 
 - `/help`：查看命令帮助
 - `/skills`：查看已发现的 skills
+- `/tools`：查看当前可用 tools
 - `/model`：切换模型和推理强度
 - `/compact`：手动压缩当前会话
 - `/tokens`：查看 token 估算

@@ -14,6 +14,7 @@ from core.commands import help as help_command
 from core.commands import jobs as jobs_command
 from core.commands import model as model_command
 from core.commands import skills as skills_command
+from core.commands import tools as tools_command
 from core.commands import tokens as tokens_command
 from core.context.skill_manager import SkillManager
 from core.terminal.cli_output import Colors, print_text
@@ -22,6 +23,7 @@ from core.terminal.cli_output import Colors, print_text
 @dataclass(frozen=True)
 class SlashCommandContext:
     skill_manager: SkillManager
+    tool_registry: Any
     client: OpenAI | None
     model: str | None
     history: list[dict[str, Any] | Any] | None
@@ -36,6 +38,7 @@ SLASH_COMMANDS = {
     help_command.COMMAND: help_command.DESCRIPTION,
     jobs_command.COMMAND: jobs_command.DESCRIPTION,
     skills_command.COMMAND: skills_command.DESCRIPTION,
+    tools_command.COMMAND: tools_command.DESCRIPTION,
     model_command.COMMAND: model_command.DESCRIPTION,
     compact_command.COMMAND: compact_command.DESCRIPTION,
     tokens_command.COMMAND: tokens_command.DESCRIPTION,
@@ -61,6 +64,10 @@ def _handle_jobs(context: SlashCommandContext) -> bool:
 
 def _handle_skills(context: SlashCommandContext) -> bool:
     return skills_command.handle(context.skill_manager)
+
+
+def _handle_tools(context: SlashCommandContext) -> bool:
+    return tools_command.handle(context.tool_registry)
 
 
 def _handle_model(_: SlashCommandContext) -> bool:
@@ -90,6 +97,7 @@ COMMAND_HANDLERS: dict[str, Callable[[SlashCommandContext], bool]] = {
     help_command.COMMAND: _handle_help,
     jobs_command.COMMAND: _handle_jobs,
     skills_command.COMMAND: _handle_skills,
+    tools_command.COMMAND: _handle_tools,
     model_command.COMMAND: _handle_model,
     compact_command.COMMAND: _handle_compact,
     tokens_command.COMMAND: _handle_tokens,
@@ -104,6 +112,7 @@ def get_slash_command_descriptions() -> dict[str, str]:
 def handle_slash_command(
     query: str,
     skill_manager: SkillManager,
+    tool_registry: Any,
     client: OpenAI | None = None,
     model: str | None = None,
     history: list[dict[str, Any] | Any] | None = None,
@@ -118,6 +127,7 @@ def handle_slash_command(
     if handler is not None:
         context = SlashCommandContext(
             skill_manager=skill_manager,
+            tool_registry=tool_registry,
             client=client,
             model=model,
             history=history,
