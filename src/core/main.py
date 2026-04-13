@@ -95,16 +95,16 @@ def main() -> None:
         http_client=httpx.Client(verify=False),
     )
     try:
-        TOOL_REGISTRY.refresh(config)
-        for error in TOOL_REGISTRY.mcp_registry.errors:
-            print_marked_text(content=error + "\n", marker="■", body_color=Colors.error, marker_color=Colors.error)
-
         print_startup_banner(
             model=config.model,
             effort=config.effort,
             directory=SKILL_MANAGER.workdir.as_posix(),
             command_descriptions=get_prompt_command_descriptions(),
         )
+
+        TOOL_REGISTRY.refresh(config)
+        for error in TOOL_REGISTRY.mcp_registry.errors:
+            print_marked_text(content=error + "\n", marker="■", body_color=Colors.error, marker_color=Colors.error)
 
         system_prompt = build_system_prompt(SKILL_MANAGER)
 
