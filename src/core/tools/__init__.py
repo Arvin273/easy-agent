@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from core.config.config_manager import AgentConfig
 from core.tools.ask_user_question import TOOL_DEF as ASK_USER_QUESTION_TOOL_DEF
 from core.tools.ask_user_question import TOOL_HANDLER as ASK_USER_QUESTION_TOOL_HANDLER
 from core.tools.ask_user_question import TOOL_NAME as ASK_USER_QUESTION_TOOL_NAME
@@ -30,6 +31,7 @@ from core.tools.write_file import TOOL_HANDLER as WRITE_FILE_TOOL_HANDLER
 from core.tools.write_file import TOOL_NAME as WRITE_FILE_TOOL_NAME
 from core.context.skill_manager import SkillManager
 from core.config.config_manager import DEFAULT_MODEL
+from core.mcp import MCPRegistry
 
 
 TOOL_HANDLERS = {
@@ -64,10 +66,13 @@ class ToolBundle:
 class ToolRegistry:
     def __init__(self, skill_manager: SkillManager) -> None:
         self.skill_manager = skill_manager
+        self.mcp_registry = MCPRegistry()
         self._cached_bundle: ToolBundle | None = None
 
-    def refresh(self) -> bool:
+    def refresh(self, config: AgentConfig | None = None) -> bool:
         changed = self.skill_manager.refresh()
+        if config is not None:
+            changed = self.mcp_registry.refresh(config.mcp_servers) or changed
         self._cached_bundle = self._build_bundle()
         return changed
 
@@ -77,8 +82,11 @@ class ToolRegistry:
         return self._cached_bundle
 
     def _build_bundle(self) -> ToolBundle:
-        tools = TOOLS + self.skill_manager.get_tools()
-        handlers = {**TOOL_HANDLERS, **self.skill_manager.get_handlers()}
+        tools = TOOLS + self.skill_manager.get_tools() + self.mcp_registry.get_tools()
+        handlers = {**TOOL_HANDLERS, **self.skill_manager.get_handlers(), **self.mcp_registry.get_handlers()}
         return ToolBundle(tools=tools, handlers=handlers)
+
+    def close(self) -> None:
+        self.mcp_registry.close()
 
 __all__ = ["DEFAULT_MODEL", "WORKDIR", "TOOL_HANDLERS", "TOOLS", "ToolBundle", "ToolRegistry"]

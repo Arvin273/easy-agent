@@ -1,59 +1,54 @@
 # Easy Agent
 
-一个轻量级的终端智能助手（轻量级 Claude Code / Codex）：
+Easy Agent 是一个运行在终端里的轻量级智能助手，面向日常开发、脚本协助和本地自动化场景。它提供类似 Claude Code / Codex 的基本交互方式：直接对话、按需调用工具、支持技能扩展，并支持接入 MCP（Model Context Protocol，模型上下文协议）Server。
 
-- 在命令行里直接对话
-- 可按需调用工具完成任务
-- 支持基于 `skills` 的能力扩展
+## 功能概览
 
-适合个人开发、脚本协助、和日常自动化场景。
+- 在命令行中直接与 Agent 对话
+- 内置文件读取、搜索、编辑、Bash 等工具
+- 支持项目级和用户级 `skills`
+- 支持自动会话压缩与 token 估算
+- 支持通过 `stdio`、`sse`、`streamable_http` 接入 MCP Server
 
 ## 安装
 
-方式一：克隆仓库后本地安装
+本地开发安装：
 
 ```bash
-# clone 后进入项目目录
+git clone https://github.com/Arvin273/easy-agent.git
+cd easy-agent
 pip install -e .
 ```
 
-安装完成后会注册全局命令 `ea`。
-
-方式二：通过 Git 仓库直接安装(推荐)
-
-```bash
-pip install git+https://gitee.com/c031001/easy-agent.git
-```
-
-或：
+通过 Git 仓库直接安装：
 
 ```bash
 pip install git+https://github.com/Arvin273/easy-agent.git
 ```
 
-同样，安装完成后会注册全局命令 `ea`。
-
-## 启动与工作目录
-
-你可以在任何目录直接启动：
+安装完成后会注册命令：
 
 ```bash
 ea
 ```
 
-注意：你从哪个目录启动，哪个目录就是当前会话的工作目录（working directory）。
+## 启动方式
 
-例如：
+在任意目录运行：
 
-- 在 `D:\code\project\demo` 里执行 `ea`，助手就以 `D:\code\project\demo` 作为当前工作区。
+```bash
+ea
+```
+
+Agent 会把当前目录当作工作目录。例如你在 `D:\code\project\demo` 下启动，后续文件工具和 Bash 默认都在这个目录范围内工作。
 
 ## 首次配置
 
-首次运行会自动创建配置文件：
+首次运行会自动生成配置文件：
 
 - `~/.ea/config.json`
 
-至少需要填写 `api_key`：
+最小配置示例：
 
 ```json
 {
@@ -63,56 +58,178 @@ ea
   "effort": "medium",
   "token_threshold": 100000,
   "keep_recent_tool_outputs": 10,
-  "min_compact_output_length": 100
+  "min_compact_output_length": 100,
+  "keep_recent_messages_count": 10,
+  "mcp_servers": []
 }
 ```
 
 字段说明：
 
-- `api_key`：必填。
-- `base_url`：可选；使用代理或兼容网关时填写。
-- `model`：默认 `gpt-5.4`。
-- `effort`：推理强度，常用 `medium`。
-- `token_threshold`：触发自动会话压缩的 token 估算阈值。
-- `keep_recent_tool_outputs`：保留最近多少条工具输出不做微压缩。
-- `min_compact_output_length`：工具输出达到该长度才会被微压缩。
+- `api_key`：必填
+- `base_url`：可选，使用代理或兼容网关时填写
+- `model`：模型名，默认 `gpt-5.4`
+- `effort`：推理强度，可选 `none`、`minimal`、`low`、`medium`、`high`、`xhigh`
+- `token_threshold`：触发自动压缩的 token 阈值
+- `keep_recent_tool_outputs`：最近保留多少条工具输出
+- `min_compact_output_length`：达到该长度的工具输出才参与微压缩
+- `keep_recent_messages_count`：压缩时保留的最近消息数量
+- `mcp_servers`：MCP Server 配置列表
+
+## MCP 配置
+
+当前支持三种 MCP 接入方式：
+
+- `stdio`
+- `sse`
+- `streamable_http`
+
+### 1. stdio
+
+用于启动本地 MCP Server 进程，通过标准输入输出通信。
+
+```json
+{
+  "mcp_servers": [
+    {
+      "name": "filesystem",
+      "transport": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "D:/code/project/easy-agent"
+      ]
+    }
+  ]
+}
+```
+
+### 2. sse
+
+用于连接已经运行中的旧版 HTTP MCP Server。
+
+```json
+{
+  "mcp_servers": [
+    {
+      "name": "legacy-sse",
+      "transport": "sse",
+      "url": "http://127.0.0.1:3001/sse"
+    }
+  ]
+}
+```
+
+### 3. streamable_http
+
+用于连接新版 HTTP MCP Server。
+
+```json
+{
+  "mcp_servers": [
+    {
+      "name": "python-streamable",
+      "transport": "streamable_http",
+      "url": "http://127.0.0.1:8000/mcp"
+    }
+  ]
+}
+```
+
+常用规则：
+
+- `name` 必须唯一
+- `stdio` 必须填写 `command`
+- `sse` 和 `streamable_http` 必须填写 `url`
+- 需要鉴权时可额外配置 `headers`
+- 修改配置后，重启 `ea` 最稳妥
 
 ## 基本使用
 
-启动后直接输入问题即可，例如：
+启动后直接输入自然语言即可，例如：
 
-- `帮我写一个发布说明模板`
-- `读取当前目录并给出重构建议`
+- `读取当前目录并总结项目结构`
+- `帮我给这个仓库写一个发布说明`
+- `搜索 src 目录里所有 TODO`
+- `把 README 里的安装部分重写一下`
 
-内置命令（持续更新）：
+常用内置命令：
 
 - `/help`：查看命令帮助
-- `/skills`：查看已发现 skills（显示具体目录路径）
-- `/model`：切换模型与推理强度（`↑/↓ + Enter`，`Ctrl+C` 取消）
-- `/compact`：手动压缩当前会话上下文
-- `/tokens`：查看当前会话 token 估算用量
+- `/skills`：查看已发现的 skills
+- `/model`：切换模型和推理强度
+- `/compact`：手动压缩当前会话
+- `/tokens`：查看 token 估算
+- `/config`：查看当前配置摘要
 - `/exit`：退出
 
-## Skills 放在哪里
+## AGENTS.md
 
-程序会自动从以下两个位置发现 skills（目录名下需包含 `SKILL.md`）：
+Easy Agent 会读取 `AGENTS.md` 作为额外指令来源，用来约束回答风格、协作方式和项目级规则。
+
+支持两个位置：
+
+- 用户目录：`~/.ea/AGENTS.md`
+- 项目目录：当前工作目录下的 `AGENTS.md`
+
+规则说明：
+
+- 用户目录中的 `AGENTS.md` 适合放通用习惯，例如回复语言、协作偏好、代码风格要求
+- 项目目录中的 `AGENTS.md` 适合放仓库专属规则，例如目录约定、测试要求、提交规范
+- 当两者同时存在且内容冲突时，项目目录中的 `AGENTS.md` 优先
+
+常见用途：
+
+- 规定回答使用中文
+- 要求修改代码前先阅读某些目录
+- 规定提交前必须运行哪些测试
+- 约束文档、代码或 commit message 的风格
+
+示例：
+
+```md
+# Repository Guidelines
+
+## Coding Style
+
+- 修改 Python 代码时保持 4 空格缩进
+- 新增测试放在 `src/test`
+
+## Validation
+
+- 提交前运行 `python -m compileall src/core`
+```
+
+## Skills
+
+程序会自动从以下目录发现 skills：
 
 - 当前工作目录：`./.ea/skills/`
-- 用户家目录：`~/.ea/skills/`
+- 用户目录：`~/.ea/skills/`
 
-当同名 skill 同时存在时，工作目录下的版本会覆盖家目录版本，便于项目级定制。
+目录下包含 `SKILL.md` 即可被识别。同名 skill 同时存在时，工作目录中的版本优先。
 
-## 版本与更新
+## 项目结构
 
-本项目会持续更新，目标是实现claude code的所有核心功能。
+主要目录如下：
 
-更新方法：
+- `src/core/main.py`：CLI 入口
+- `src/core/commands/`：斜杠命令
+- `src/core/tools/`：内置工具
+- `src/core/context/`：技能、提示词、压缩相关逻辑
+- `src/core/config/`：配置加载
+- `src/core/terminal/`：终端交互和输出
+- `src/core/mcp/`：MCP 接入层
+- `src/test/`：单元测试
+- `assets/`：演示图片等静态资源
 
-```bash
-git pull
-pip install -e .
-```
+## 注意事项
+
+- 不要提交真实 API Key
+- 本地配置保存在 `~/.ea/config.json`
+- 需要改工具执行逻辑时，优先验证超时、中断和错误输出路径
 
 ## 演示图
 
-![image-20260409164508885](./assets/img.png)
+![Easy Agent](./assets/img.png)

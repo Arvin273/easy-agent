@@ -27,8 +27,8 @@ def build_system_prompt(skill_manager: SkillManager) -> str:
     return system_prompt
 
 
-def refresh_tools_and_system_prompt(history: list[dict[str, Any] | Any]) -> None:
-    changed = TOOL_REGISTRY.refresh()
+def refresh_tools_and_system_prompt(history: list[dict[str, Any] | Any], config: Any) -> None:
+    changed = TOOL_REGISTRY.refresh(config)
     if not changed or not history:
         return
     first = history[0]
@@ -92,85 +92,89 @@ def main() -> None:
         base_url=config.base_url,
         http_client=httpx.Client(verify=False),
     )
-    print_startup_banner(
-        model=config.model,
-        effort=config.effort,
-        directory=SKILL_MANAGER.workdir.as_posix(),
-        command_descriptions=get_prompt_command_descriptions(),
-    )
+    try:
+        TOOL_REGISTRY.refresh(config)
+        for error in TOOL_REGISTRY.mcp_registry.errors:
+            print_marked_text(content=error + "\n", marker="■", body_color=Colors.error, marker_color=Colors.error)
 
-    system_prompt = build_system_prompt(SKILL_MANAGER)
+        print_startup_banner(
+            model=config.model,
+            effort=config.effort,
+            directory=SKILL_MANAGER.workdir.as_posix(),
+            command_descriptions=get_prompt_command_descriptions(),
+        )
 
-    history: list[dict[str, Any] | Any] = [
-        {
-            "role": "system",
-            "content": system_prompt,
-        },
-        *load_agents_system_messages(),
-    ]
-    input_history: list[str] = []
-    while True:
-        try:
-            query = read_user_input(
-                "> ",
-                history=input_history,
-                command_descriptions=get_prompt_command_descriptions(),
-            ).strip()
-        except (EOFError, KeyboardInterrupt):
-            print()
-            break
-        if query:
-            input_history.append(query)
-        else:
-            continue
+        system_prompt = build_system_prompt(SKILL_MANAGER)
 
-        if query.startswith("/"):
-            should_exit = handle_slash_command(
-                query,
-                SKILL_MANAGER,
-                client=client,
-                model=config.model,
-                history=history,
-                keep_recent_messages_count=config.keep_recent_messages_count,
-                token_threshold=config.token_threshold,
-            )
-            if should_exit:
-                break
+        history: list[dict[str, Any] | Any] = [
+            {
+                "role": "system",
+                "content": system_prompt,
+            },
+            *load_agents_system_messages(),
+        ]
+        input_history: list[str] = []
+        while True:
             try:
-                config = load_agent_config()
-            except Exception as exc:
-                print_text(Colors.error, content=str(exc) + '\n')
-            continue
+                query = read_user_input(
+                    "> ",
+                    history=input_history,
+                    command_descriptions=get_prompt_command_descriptions(),
+                ).strip()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                break
+            if query:
+                input_history.append(query)
+            else:
+                continue
 
-        history.append({"role": "user", "content": query})
-        refresh_tools_and_system_prompt(history)
-        refresh_agents_system_messages(history)
-        try:
-            agent_loop(
-                client=client,
-                model=config.model,
-                effort=config.effort,
-                token_threshold=config.token_threshold,
-                keep_recent_tool_outputs=config.keep_recent_tool_outputs,
-                min_compact_output_length=config.min_compact_output_length,
-                keep_recent_messages_count=config.keep_recent_messages_count,
-                history=history,
-            )
-        except Exception as exc:
-            print_marked_text(content=str(exc) + '\n\n', marker="■", body_color=Colors.error, marker_color=Colors.error)
-            continue
-        except KeyboardInterrupt:
-            print()
-            continue
+            if query.startswith("/"):
+                should_exit = handle_slash_command(
+                    query,
+                    SKILL_MANAGER,
+                    client=client,
+                    model=config.model,
+                    history=history,
+                    keep_recent_messages_count=config.keep_recent_messages_count,
+                    token_threshold=config.token_threshold,
+                )
+                if should_exit:
+                    break
+                try:
+                    config = load_agent_config()
+                    TOOL_REGISTRY.refresh(config)
+                except Exception as exc:
+                    print_text(Colors.error, content=str(exc) + '\n')
+                for error in TOOL_REGISTRY.mcp_registry.errors:
+                    print_marked_text(content=error + "\n", marker="■", body_color=Colors.error, marker_color=Colors.error)
+                continue
+
+            history.append({"role": "user", "content": query})
+            refresh_tools_and_system_prompt(history, config)
+            refresh_agents_system_messages(history)
+            for error in TOOL_REGISTRY.mcp_registry.errors:
+                print_marked_text(content=error + "\n", marker="■", body_color=Colors.error, marker_color=Colors.error)
+            try:
+                agent_loop(
+                    client=client,
+                    model=config.model,
+                    effort=config.effort,
+                    token_threshold=config.token_threshold,
+                    keep_recent_tool_outputs=config.keep_recent_tool_outputs,
+                    min_compact_output_length=config.min_compact_output_length,
+                    keep_recent_messages_count=config.keep_recent_messages_count,
+                    history=history,
+                )
+            except Exception as exc:
+                print_marked_text(content=str(exc) + '\n\n', marker="■", body_color=Colors.error, marker_color=Colors.error)
+                continue
+            except KeyboardInterrupt:
+                print()
+                continue
+    finally:
+        TOOL_REGISTRY.close()
 
 
 if __name__ == "__main__":
     main()
-
-"""
-TODO: 
-1. 增强提示词
-2. 添加更多slash命令
-3. *MCP
-4. *权限
-"""

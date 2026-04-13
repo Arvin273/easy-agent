@@ -33,6 +33,7 @@ def handle() -> bool:
         f"keep_recent_tool_outputs: {config.keep_recent_tool_outputs}",
         f"min_compact_output_length: {config.min_compact_output_length}",
         f"keep_recent_messages_count: {config.keep_recent_messages_count}",
+        f"mcp_servers: {len(config.mcp_servers)} configured",
     ]
     print_title_and_content(Colors.green, "\n".join(lines) + "\n\n", title="Config")
     return False
