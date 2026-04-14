@@ -5,6 +5,7 @@ import signal
 import shutil
 import sys
 import threading
+import time
 from typing import Any, Callable
 
 from openai import OpenAI
@@ -51,15 +52,23 @@ def run_with_working_counter(callable_obj: Callable[[], Any]) -> tuple[Any | Non
     done_event = threading.Event()
     cancel_event = threading.Event()
     working_color = Colors.reason
-    counter = {"ticks": 0}
     result_holder: dict[str, Any] = {}
     error_holder: dict[str, BaseException] = {}
     previous_sigint_handler: Any = None
     sigint_handler_installed = False
     status_line_rendered = False
+    started_at = time.monotonic()
+    last_rendered_elapsed = -1
 
-    def _render_status(elapsed: int) -> None:
-        nonlocal status_line_rendered
+    def _elapsed_seconds() -> int:
+        return max(1, int(time.monotonic() - started_at))
+
+    def _render_status() -> None:
+        nonlocal status_line_rendered, last_rendered_elapsed
+        elapsed = _elapsed_seconds()
+        if elapsed == last_rendered_elapsed:
+            return
+        last_rendered_elapsed = elapsed
         status_text = (
             f"{working_color}{THEME.body_indent}Generating {elapsed}s... (Esc to cancel){RESET}"
         )
@@ -95,21 +104,19 @@ def run_with_working_counter(callable_obj: Callable[[], Any]) -> tuple[Any | Non
             sigint_handler_installed = False
 
     try:
-        _render_status(0)
+        _render_status()
         while True:
             if cancel_event.is_set():
-                return None, max(1, counter["ticks"] // 10), True
+                return None, _elapsed_seconds(), True
             if done_event.wait(0.1):
                 break
-            counter["ticks"] += 1
-            if counter["ticks"] % 10 == 0:
-                _render_status(counter["ticks"] // 10)
+            _render_status()
             if read_cancel_key_nonblocking() == "esc":
-                return None, max(1, counter["ticks"] // 10), True
+                return None, _elapsed_seconds(), True
 
         if "error" in error_holder:
             raise error_holder["error"]
-        return result_holder.get("value"), max(1, counter["ticks"] // 10), False
+        return result_holder.get("value"), _elapsed_seconds(), False
     finally:
         if sigint_handler_installed:
             try:
