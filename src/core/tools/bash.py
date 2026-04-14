@@ -32,6 +32,10 @@ _BACKGROUND_TASKS: dict[str, "_BackgroundTaskState"] = {}
 _BACKGROUND_TASK_COUNTER = count(1)
 
 
+def _format_elapsed_seconds(seconds: float) -> str:
+    return f"{seconds:.3f}s"
+
+
 def _format_live_preview(text: str, edge_lines: int = 4) -> list[str]:
     lines = text.splitlines()
     max_lines = edge_lines * 2
@@ -78,6 +82,48 @@ def _build_bash_env() -> dict[str, str]:
         env["LANG"] = "C.UTF-8"
         env["LC_ALL"] = "C.UTF-8"
     return env
+
+
+class _TerminalOutputNormalizer:
+    def __init__(self) -> None:
+        self._current_line = ""
+        self._pending_carriage_return = False
+
+    def feed(self, text: str) -> str:
+        if not text:
+            return ""
+
+        normalized_parts: list[str] = []
+        for char in text:
+            if self._pending_carriage_return:
+                if char == "\n":
+                    normalized_parts.append(self._current_line)
+                    normalized_parts.append("\n")
+                    self._current_line = ""
+                    self._pending_carriage_return = False
+                    continue
+                self._current_line = ""
+                self._pending_carriage_return = False
+
+            if char == "\r":
+                self._pending_carriage_return = True
+                continue
+            if char == "\n":
+                normalized_parts.append(self._current_line)
+                normalized_parts.append("\n")
+                self._current_line = ""
+                continue
+            self._current_line += char
+
+        return "".join(normalized_parts)
+
+    def flush(self) -> str:
+        self._pending_carriage_return = False
+        if not self._current_line:
+            return ""
+        tail = self._current_line
+        self._current_line = ""
+        return tail
 
 
 @lru_cache(maxsize=1)
@@ -211,10 +257,11 @@ class _OutputBuffer:
 
 
 class _LiveBashPreview:
-    def __init__(self, output_buffer: _OutputBuffer) -> None:
+    def __init__(self, output_buffer: _OutputBuffer, started_at: float) -> None:
         self._lock = threading.Lock()
         self._buffer = output_buffer
         self._rendered_lines = 0
+        self._started_at = started_at
         self._enabled = sys.stdout.isatty() and ANSI_ENABLED
 
     def append(self, text: str) -> None:
@@ -225,6 +272,12 @@ class _LiveBashPreview:
                 self._render()
             else:
                 print_text(Colors.reason, text)
+
+    def tick(self) -> None:
+        if not self._enabled:
+            return
+        with self._lock:
+            self._render()
 
     def finalize(self) -> None:
         if not self._enabled:
@@ -239,13 +292,15 @@ class _LiveBashPreview:
 
     def _render(self) -> None:
         preview_lines = _format_live_preview(self._buffer.get_preview_text(), edge_lines=PREVIEW_EDGE_LINES)
+        elapsed_line = f"[elapsed: {_format_elapsed_seconds(time.time() - self._started_at)}]"
+        display_lines = [elapsed_line, *preview_lines]
         for _ in range(self._rendered_lines):
             sys.stdout.write("\x1b[1A\x1b[2K\r")
 
-        for line in preview_lines:
+        for line in display_lines:
             sys.stdout.write(f"{Colors.reason}{THEME.body_indent}{line}{RESET}\n")
         sys.stdout.flush()
-        self._rendered_lines = len(preview_lines)
+        self._rendered_lines = len(display_lines)
 
 
 @dataclass
@@ -262,6 +317,7 @@ class _BackgroundTaskState:
     timeout_ms: int = DEFAULT_BACKGROUND_TIMEOUT_MS
 
     def snapshot(self, include_output: bool = False) -> dict[str, Any]:
+        elapsed_seconds = (self.finished_at or time.time()) - self.started_at
         data = {
             "task_id": self.task_id,
             "command": self.command,
@@ -274,6 +330,7 @@ class _BackgroundTaskState:
                 if self.finished_at is not None
                 else None
             ),
+            "elapsed_seconds": round(elapsed_seconds, 3),
         }
         output = self.output_buffer.get_output().strip()
         preview = "\n".join(_format_live_preview(output, edge_lines=PREVIEW_EDGE_LINES)) if output else ""
@@ -293,6 +350,7 @@ def _read_process_output(
         return
 
     decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+    normalizer = _TerminalOutputNormalizer()
 
     try:
         while True:
@@ -301,14 +359,23 @@ def _read_process_output(
                 break
             text = decoder.decode(data)
             if text:
-                output_buffer.append(text)
-                if live_preview is not None:
-                    live_preview.append(text)
+                normalized = normalizer.feed(text)
+                if normalized:
+                    output_buffer.append(normalized)
+                    if live_preview is not None:
+                        live_preview.append(normalized)
         tail = decoder.decode(b"", final=True)
         if tail:
-            output_buffer.append(tail)
+            normalized_tail = normalizer.feed(tail)
+            if normalized_tail:
+                output_buffer.append(normalized_tail)
+                if live_preview is not None:
+                    live_preview.append(normalized_tail)
+        final_tail = normalizer.flush()
+        if final_tail:
+            output_buffer.append(final_tail)
             if live_preview is not None:
-                live_preview.append(tail)
+                live_preview.append(final_tail)
     finally:
         pipe.close()
 
@@ -330,11 +397,18 @@ def _run_foreground_process(
     process: subprocess.Popen[bytes],
     timeout_ms: int,
 ) -> str:
+    started_at = time.time()
     output_buffer = _OutputBuffer()
-    preview = _LiveBashPreview(output_buffer)
+    preview = _LiveBashPreview(output_buffer, started_at)
     reader_thread = threading.Thread(
         target=_read_process_output,
         args=(process, output_buffer, preview),
+        daemon=True,
+    )
+    stop_preview_event = threading.Event()
+    tick_thread = threading.Thread(
+        target=_tick_live_preview,
+        args=(preview, stop_preview_event),
         daemon=True,
     )
 
@@ -342,6 +416,7 @@ def _run_foreground_process(
         _ACTIVE_PROCESSES.add(process)
 
     reader_thread.start()
+    tick_thread.start()
     timed_out = False
     try:
         process.wait(timeout=timeout_ms / 1000)
@@ -349,9 +424,11 @@ def _run_foreground_process(
         timed_out = True
         _terminate_process_tree(process)
     finally:
+        stop_preview_event.set()
         with _ACTIVE_PROCESSES_LOCK:
             _ACTIVE_PROCESSES.discard(process)
         reader_thread.join(timeout=2)
+        tick_thread.join(timeout=1)
         preview.finalize()
 
     if timed_out:
@@ -360,6 +437,11 @@ def _run_foreground_process(
 
     output = output_buffer.get_output().strip()
     return output if output else "(no output)"
+
+
+def _tick_live_preview(preview: _LiveBashPreview, stop_event: threading.Event) -> None:
+    while not stop_event.wait(0.2):
+        preview.tick()
 
 
 def _monitor_background_task(task_id: str) -> None:
