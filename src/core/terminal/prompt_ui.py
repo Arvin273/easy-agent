@@ -300,15 +300,25 @@ def _run_text_prompt(
 
     bindings = _build_text_bindings()
 
-    @bindings.add("up", filter=show_completion_menu, eager=True)
-    def _select_previous_completion(event: object) -> None:
-        if _ensure_valid_completion_navigation(buffer, completer):
-            buffer.complete_previous()
+    @bindings.add("up", eager=True)
+    def _history_previous(event: object) -> None:
+        _cancel_completion_safely(buffer)
+        event.current_buffer.auto_up(count=event.arg)
 
-    @bindings.add("down", filter=show_completion_menu, eager=True)
+    @bindings.add("down", eager=True)
+    def _history_next(event: object) -> None:
+        _cancel_completion_safely(buffer)
+        event.current_buffer.auto_down(count=event.arg)
+
+    @bindings.add("tab", filter=show_completion_menu, eager=True)
     def _select_next_completion(event: object) -> None:
         if _ensure_valid_completion_navigation(buffer, completer):
             buffer.complete_next()
+
+    @bindings.add("s-tab", filter=show_completion_menu, eager=True)
+    def _select_previous_completion(event: object) -> None:
+        if _ensure_valid_completion_navigation(buffer, completer):
+            buffer.complete_previous()
 
     @bindings.add("backspace", filter=Condition(lambda: _is_prefix_input_context(buffer)), eager=True)
     def _delete_and_refresh_completion(event: object) -> None:

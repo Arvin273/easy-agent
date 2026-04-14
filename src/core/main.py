@@ -39,16 +39,11 @@ def refresh_tools_and_system_prompt(history: list[dict[str, Any] | Any], config:
         first["content"] = build_system_prompt(SKILL_MANAGER)
 
 
-def _is_agents_system_message(message: dict[str, Any] | Any) -> bool:
-    if not isinstance(message, dict):
-        return False
-    return message.get("role") == "system"
-
 def refresh_agents_system_messages(history: list[dict[str, Any] | Any]) -> None:
     if not history:
         return
     base_message = history[:1]
-    other_messages = [message for message in history[1:] if not _is_agents_system_message(message)]
+    other_messages = [message for message in history[1:] if not message.get("role") == "system"]
     history[:] = [*base_message, *load_agents_system_messages(), *other_messages]
 
 

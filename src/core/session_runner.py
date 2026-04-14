@@ -16,6 +16,12 @@ from core.context.compression import (
     estimate_tokens,
     micro_compact,
 )
+from core.utils.session_runner_utils import (
+    format_tool_output_preview,
+    normalize_tool_result,
+    read_cancel_key_nonblocking,
+    repair_incomplete_tool_history,
+)
 from core.terminal.cli_output import (
     Colors,
     RESET,
@@ -26,42 +32,8 @@ from core.terminal.cli_output import (
 )
 
 
-def normalize_tool_result(result: Any) -> str:
-    if isinstance(result, str):
-        return result
-    if isinstance(result, dict):
-        output = result.get("output", "")
-        return str(output)
-    return str(result)
-
-
-def _truncate_preview_line(line: str, max_width: int = 160) -> str:
-    if len(line) <= max_width:
-        return line
-    hidden = len(line) - max_width
-    return f"{line[:max_width]}... ({hidden} more chars)"
-
-
-def _format_tool_output_preview(output: str, edge_lines: int = 4) -> str:
-    lines = output.splitlines()
-    if len(lines) <= 1:
-        try:
-            parsed = json.loads(output)
-        except Exception:
-            parsed = None
-        if parsed is not None:
-            pretty = json.dumps(parsed, ensure_ascii=False, indent=2)
-            lines = pretty.splitlines()
-    lines = [_truncate_preview_line(line) for line in lines]
-    max_lines = edge_lines * 2
-    if len(lines) <= max_lines:
-        return "\n".join(lines)
-    hidden = len(lines) - max_lines
-    preview_lines = lines[:edge_lines] + [f"... ({hidden} more lines)"] + lines[-edge_lines:]
-    return "\n".join(preview_lines)
-
-
 def _should_print_tool_output_preview(tool_name: str, output: str) -> bool:
+    # Bash 只在错误、无输出或转后台时打印摘要，避免正常命令刷屏。
     stripped = str(output).strip()
     if not stripped:
         return False
@@ -74,40 +46,8 @@ def _should_print_tool_output_preview(tool_name: str, output: str) -> bool:
     )
 
 
-def _read_cancel_key_nonblocking() -> str | None:
-    if sys.platform.startswith("win"):
-        import msvcrt
-
-        if not msvcrt.kbhit():
-            return None
-        key = msvcrt.getwch()
-        if key == "\x1b":
-            return "esc"
-        return None
-
-    import select
-    import termios
-    import tty
-
-    if not sys.stdin.isatty():
-        return None
-
-    fd = sys.stdin.fileno()
-    old_settings = termios.tcgetattr(fd)
-    try:
-        tty.setcbreak(fd)
-        ready, _, _ = select.select([sys.stdin], [], [], 0)
-        if not ready:
-            return None
-        key = sys.stdin.read(1)
-        if key == "\x1b":
-            return "esc"
-        return None
-    finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-
-
 def run_with_working_counter(callable_obj: Callable[[], Any]) -> tuple[Any | None, int, bool]:
+    # 在请求模型期间持续刷新状态，并支持 Esc/Ctrl+C 取消本轮生成。
     done_event = threading.Event()
     cancel_event = threading.Event()
     working_color = Colors.reason
@@ -164,7 +104,7 @@ def run_with_working_counter(callable_obj: Callable[[], Any]) -> tuple[Any | Non
             counter["ticks"] += 1
             if counter["ticks"] % 10 == 0:
                 _render_status(counter["ticks"] // 10)
-            if _read_cancel_key_nonblocking() == "esc":
+            if read_cancel_key_nonblocking() == "esc":
                 return None, max(1, counter["ticks"] // 10), True
 
         if "error" in error_holder:
@@ -187,6 +127,7 @@ def print_response_items(
     response: Any,
     history: list[Any],
 ) -> list[Any]:
+    # 统一打印模型输出，并把 assistant 消息和 function_call 写回 history。
     tool_calls: list[Any] = []
 
     for item in response.output:
@@ -237,6 +178,7 @@ def run_tool_call(
     tool_call: Any,
     handlers: dict[str, Callable[[dict[str, Any]], Any]]
 ) -> dict[str, str]:
+    # 执行单次工具调用，负责终端展示、中断处理和 function_call_output 封装。
     tool_name = tool_call.name
     arguments = json.loads(tool_call.arguments)
     print_marked_text(
@@ -264,43 +206,56 @@ def run_tool_call(
         tool_thread = threading.Thread(target=tool_worker, daemon=True)
         tool_thread.start()
 
-        interrupted = False
         warned_not_interruptible = False
-        while True:
-            if done_event.wait(0.1):
-                break
-            if _read_cancel_key_nonblocking() == "esc":
+        interrupted = False
+        previous_sigint_handler: Any = None
+        sigint_handler_installed = False
+        sigint_received = False
+
+        def _on_sigint(signum: int, frame: Any) -> None:
+            nonlocal sigint_received
+            sigint_received = True
+
+        if threading.current_thread() is threading.main_thread():
+            try:
+                previous_sigint_handler = signal.getsignal(signal.SIGINT)
+                signal.signal(signal.SIGINT, _on_sigint)
+                sigint_handler_installed = True
+            except Exception:
+                sigint_handler_installed = False
+
+        try:
+            while True:
+                if done_event.wait(0.1):
+                    break
+                cancel_requested = sigint_received or read_cancel_key_nonblocking() == "esc"
+                if not cancel_requested:
+                    continue
                 if tool_name == BASH_TOOL_NAME:
-                    interrupted = True
                     bash_tool.interrupt_running_bash()
+                    print_text(Colors.reason, "工具已中断\n\n")
+                    interrupted = True
                     break
                 if not warned_not_interruptible:
                     print_text(Colors.reason, "当前工具不支持中断，等待执行完成...\n\n")
                     warned_not_interruptible = True
+        finally:
+            if sigint_handler_installed:
+                try:
+                    signal.signal(signal.SIGINT, previous_sigint_handler)
+                except Exception:
+                    pass
 
         if interrupted:
-            print_text(Colors.reason, "工具已中断\n\n")
-            return {
-                "type": "function_call_output",
-                "call_id": tool_call.call_id,
-                "output": "工具已中断",
-            }
-
-        if "error" in error_holder:
+            result = "工具已中断"
+        elif "error" in error_holder:
             result = f"Tool '{tool_name}' failed: {error_holder['error']}"
         else:
             result = result_holder.get("value")
 
     output = normalize_tool_result(result)
-    if str(output) == "工具已中断":
-        print_text(Colors.reason, "工具已中断\n\n")
-        return {
-            "type": "function_call_output",
-            "call_id": tool_call.call_id,
-            "output": "工具已中断",
-        }
     if _should_print_tool_output_preview(tool_name, str(output)):
-        preview = _format_tool_output_preview(str(output), edge_lines=3)
+        preview = format_tool_output_preview(str(output), edge_lines=3)
         print_text(Colors.reason, f"{preview}\n")
         print()
     return {
@@ -322,7 +277,9 @@ def run_until_no_tool_call(
     tools: list[dict[str, Any]],
     handlers: dict[str, Callable[[dict[str, Any]], Any]],
 ) -> None:
+    # 驱动一轮完整的 agent 交互，直到模型不再返回新的工具调用。
     while True:
+        repair_incomplete_tool_history(history)
         # Layer 1: lightweight compaction before each model call.
         micro_compact(
             history,
