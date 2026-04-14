@@ -17,9 +17,7 @@ from typing import Any
 from core.terminal.cli_output import ANSI_ENABLED, RESET, THEME, Colors, print_text
 from core.tools.common import WORKDIR, parse_optional_int
 
-DEFAULT_TIMEOUT_MS = 120_000
-DEFAULT_BACKGROUND_TIMEOUT_MS = 600_000
-MAX_TIMEOUT_MS = 600_000
+MAX_TIMEOUT_SECONDS = 600
 MAX_OUTPUT_CHARS = 50_000
 MAX_PREVIEW_CHARS = 12_000
 PREVIEW_EDGE_LINES = 3
@@ -43,23 +41,6 @@ def _format_live_preview(text: str, edge_lines: int = 4) -> list[str]:
         return lines
     hidden = len(lines) - max_lines
     return lines[:edge_lines] + [f"... ({hidden} more lines)"] + lines[-edge_lines:]
-
-
-def _coerce_timeout_ms(value: Any) -> int:
-    timeout = parse_optional_int(value, "timeout")
-    if timeout is None:
-        return DEFAULT_TIMEOUT_MS
-    if timeout <= 0:
-        raise ValueError("timeout 必须大于 0。")
-    if timeout > MAX_TIMEOUT_MS:
-        raise ValueError(f"timeout 不能超过 {MAX_TIMEOUT_MS} 毫秒。")
-    return timeout
-
-
-def _resolve_timeout_ms(value: Any, *, run_in_background: bool) -> int:
-    if value is None:
-        return DEFAULT_BACKGROUND_TIMEOUT_MS if run_in_background else DEFAULT_TIMEOUT_MS
-    return _coerce_timeout_ms(value)
 
 
 def _coerce_bool(value: Any, field_name: str) -> bool:
@@ -378,7 +359,7 @@ class _BackgroundTaskState:
     status: str = "running"
     return_code: int | None = None
     finished_at: float | None = None
-    timeout_ms: int = DEFAULT_BACKGROUND_TIMEOUT_MS
+    timeout_seconds: int | None = None
 
     def snapshot(self, include_output: bool = False) -> dict[str, Any]:
         elapsed_seconds = (self.finished_at or time.time()) - self.started_at
@@ -459,7 +440,7 @@ def interrupt_running_bash() -> bool:
 
 def _run_foreground_process(
     process: subprocess.Popen[bytes],
-    timeout_ms: int,
+    timeout_seconds: int | None,
 ) -> str:
     started_at = time.time()
     output_buffer = _OutputBuffer()
@@ -483,7 +464,10 @@ def _run_foreground_process(
     tick_thread.start()
     timed_out = False
     try:
-        process.wait(timeout=timeout_ms / 1000)
+        if timeout_seconds is None:
+            process.wait()
+        else:
+            process.wait(timeout=timeout_seconds)
     except subprocess.TimeoutExpired:
         timed_out = True
         _terminate_process_tree(process)
@@ -496,11 +480,10 @@ def _run_foreground_process(
         preview.finalize()
 
     if timed_out:
-        seconds = timeout_ms / 1000
         preview = output_buffer.get_preview_text().strip()
         if preview:
-            return f"Error: Timeout ({seconds:g}s)\n\nPreview:\n{preview}"
-        return f"Error: Timeout ({seconds:g}s)"
+            return f"Error: Timeout ({timeout_seconds:g}s)\n\nPreview:\n{preview}"
+        return f"Error: Timeout ({timeout_seconds:g}s)"
 
     output = output_buffer.get_output().strip()
     return output if output else "(no output)"
@@ -525,7 +508,10 @@ def _monitor_background_task(task_id: str) -> None:
     reader_thread.start()
     timed_out = False
     try:
-        task.process.wait(timeout=task.timeout_ms / 1000)
+        if task.timeout_seconds is None:
+            task.process.wait()
+        else:
+            task.process.wait(timeout=task.timeout_seconds)
     except subprocess.TimeoutExpired:
         timed_out = True
         _terminate_process_tree(task.process)
@@ -549,7 +535,7 @@ def _monitor_background_task(task_id: str) -> None:
             current.status = "failed"
 
 
-def _start_background_task(command: str, description: str, timeout_ms: int) -> str:
+def _start_background_task(command: str, description: str, timeout_seconds: int | None) -> str:
     process = _start_bash_process(command)
     task_id = f"bash-{next(_BACKGROUND_TASK_COUNTER)}"
     state = _BackgroundTaskState(
@@ -558,7 +544,7 @@ def _start_background_task(command: str, description: str, timeout_ms: int) -> s
         description=description,
         started_at=time.time(),
         process=process,
-        timeout_ms=timeout_ms,
+        timeout_seconds=timeout_seconds,
     )
     with _BACKGROUND_TASKS_LOCK:
         _BACKGROUND_TASKS[task_id] = state
@@ -617,12 +603,26 @@ def run_bash(arguments: dict[str, Any]) -> str:
         if description_value.strip():
             description = description_value.strip()
 
-    run_in_background = _coerce_bool(arguments.get("run_in_background"), "run_in_background")
-    timeout_ms = _resolve_timeout_ms(arguments.get("timeout"), run_in_background=run_in_background)
+    run_in_background = arguments.get("run_in_background")
+    if run_in_background is None:
+        run_in_background = False
+    elif not isinstance(run_in_background, bool):
+        raise ValueError("run_in_background 参数必须是布尔值。")
+
+    timeout_value = arguments.get("timeout")
+    timeout_seconds: int | None = None
+    if timeout_value is not None:
+        timeout_seconds = parse_optional_int(timeout_value, "timeout")
+        if timeout_seconds is None:
+            raise ValueError("timeout 缺少有效值。")
+        if timeout_seconds <= 0:
+            raise ValueError("timeout 必须大于 0。")
+        if timeout_seconds > MAX_TIMEOUT_SECONDS:
+            raise ValueError(f"timeout 不能超过 {MAX_TIMEOUT_SECONDS} 秒。")
 
     try:
         if run_in_background:
-            task_id = _start_background_task(command, description, timeout_ms)
+            task_id = _start_background_task(command, description, timeout_seconds)
             return f"Started background bash task {task_id}"
         process = _start_bash_process(command)
     except RuntimeError as exc:
@@ -630,7 +630,7 @@ def run_bash(arguments: dict[str, Any]) -> str:
     except Exception as exc:
         return f"Error: {exc}"
 
-    return _run_foreground_process(process, timeout_ms)
+    return _run_foreground_process(process, timeout_seconds)
 
 
 def run_bash_jobs(arguments: dict[str, Any]) -> str:
@@ -669,14 +669,14 @@ TOOL_DEF = {
         "description": (
             "执行一条 bash 命令，并返回输出。"
             "工作目录固定为当前项目目录。"
-            "支持可选的 timeout（毫秒，前台默认 120000，后台默认 600000，最大 600000）、description 和 run_in_background。"
+            "支持可选的 timeout（单位秒；不传则不超时）、description 和 run_in_background。"
             "涉及查文件、读文件、写文件、搜索内容时，优先使用专门工具，不要滥用 Bash。"
         ),
     "parameters": {
         "type": "object",
         "properties": {
             "command": {"type": "string", "description": "要执行的 bash 命令"},
-            "timeout": {"type": "number", "description": "可选超时时间，单位毫秒"},
+            "timeout": {"type": "number", "description": "可选超时时间，单位秒；不传则不超时"},
             "description": {"type": "string", "description": "命令用途说明，便于终端展示和后台任务查看"},
             "run_in_background": {"type": "boolean", "description": "是否作为后台任务启动，默认 false"},
         },
