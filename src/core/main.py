@@ -10,6 +10,7 @@ from core.terminal.cli_output import print_startup_banner, print_text, Colors, p
 from core.terminal.prompt_ui import read_user_input
 from core.commands import get_slash_command_descriptions, handle_slash_command
 from core.tools import ToolRegistry
+from core.tools.bash import interrupt_running_bash, run_bash
 
 SKILL_MANAGER = SkillManager()
 TOOL_REGISTRY = ToolRegistry(SKILL_MANAGER)
@@ -77,6 +78,19 @@ def agent_loop(
         tools=bundle.tools,
         handlers=bundle.handlers,
     )
+
+
+def handle_shell_command(query: str) -> None:
+    command = query[1:].strip()
+    if not command:
+        print_text(Colors.error, "缺少要执行的命令。\n\n")
+        return
+
+    try:
+        run_bash({"command": command, "stream_full_output": True})
+    except KeyboardInterrupt:
+        interrupt_running_bash()
+        print_text(Colors.reason, "命令已中断\n\n")
 
 def main() -> None:
     try:
@@ -147,6 +161,10 @@ def main() -> None:
                     print_text(Colors.error, content=str(exc) + '\n')
                 for error in TOOL_REGISTRY.mcp_registry.errors:
                     print_marked_text(content=error + "\n", marker="■", body_color=Colors.error, marker_color=Colors.error)
+                continue
+
+            if query.startswith("!"):
+                handle_shell_command(query)
                 continue
 
             history.append({"role": "user", "content": query})

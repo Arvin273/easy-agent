@@ -30,6 +30,7 @@ _CHOICE_BINDINGS = KeyBindings()
 _CHOICE_TOOLBAR = "↑/↓ 选择，Enter 确认，Ctrl+C 取消"
 _TEXT_PROMPT_STYLE = Style.from_dict(
     {
+        "input.shell": "#ff5faf",
         "slash-menu.command": "#5fd7ff",
         "slash-menu.command.current": "bold #00afaf",
         "slash-menu.desc": "#9a9a9a",
@@ -123,6 +124,12 @@ def _is_prefix_input_context(buffer: Buffer) -> bool:
 def _is_dollar_skill_selection_context(buffer: Buffer) -> bool:
     text = buffer.text.strip()
     return text.startswith("$") and " " not in text
+
+
+def _get_input_style(buffer: Buffer) -> str:
+    if buffer.text.lstrip().startswith("!"):
+        return "class:input.shell"
+    return ""
 
 
 def _refresh_completion(buffer: Buffer, completer: PrefixCommandCompleter) -> None:
@@ -265,6 +272,7 @@ def _run_text_prompt(
             input_processors=[BeforeInput(prompt)],
             focus_on_click=True,
         ),
+        style=lambda: _get_input_style(buffer),
         dont_extend_height=True,
     )
 

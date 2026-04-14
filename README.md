@@ -190,6 +190,11 @@ MCP 不再写在 `~/.ea/config.json` 中，而是独立写在两个位置：
 - `/config`：查看当前配置摘要
 - `/exit`：退出
 
+也支持直接执行本地命令：
+
+- 以 `!` 开头时会直接执行后面的命令，不发送给模型
+- 例如 `!pwd`、`!git status`、`!pytest -q`
+
 ## AGENTS.md
 
 Easy Agent 会读取 `AGENTS.md` 作为额外指令来源，用来约束回答风格、协作方式和项目级规则。

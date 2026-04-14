@@ -281,11 +281,11 @@ class _OutputBuffer:
 
 
 class _LiveBashPreview:
-    def __init__(self, output_buffer: _OutputBuffer) -> None:
+    def __init__(self, output_buffer: _OutputBuffer, force_plain_text: bool = False) -> None:
         self._lock = threading.Lock()
         self._buffer = output_buffer
         self._rendered_lines = 0
-        self._enabled = sys.stdout.isatty() and ANSI_ENABLED
+        self._enabled = (sys.stdout.isatty() and ANSI_ENABLED) and not force_plain_text
         self._plain_text_buffer = ""
         self._last_render_signature: tuple[str, ...] = ()
 
@@ -430,9 +430,11 @@ def interrupt_running_bash() -> bool:
 def _run_foreground_process(
     process: subprocess.Popen[bytes],
     timeout_seconds: int | None,
+    *,
+    stream_full_output: bool = False,
 ) -> str:
     output_buffer = _OutputBuffer()
-    preview = _LiveBashPreview(output_buffer)
+    preview = _LiveBashPreview(output_buffer, force_plain_text=stream_full_output)
     reader_thread = threading.Thread(
         target=_read_process_output,
         args=(process, output_buffer, preview),
@@ -601,7 +603,13 @@ def run_bash(arguments: dict[str, Any]) -> str:
     except Exception as exc:
         return f"Error: {exc}"
 
-    return _run_foreground_process(process, timeout_seconds)
+    stream_full_output = arguments.get("stream_full_output")
+    if stream_full_output is None:
+        stream_full_output = False
+    elif not isinstance(stream_full_output, bool):
+        raise ValueError("stream_full_output 参数必须是布尔值。")
+
+    return _run_foreground_process(process, timeout_seconds, stream_full_output=stream_full_output)
 
 
 def run_bash_jobs(arguments: dict[str, Any]) -> str:
