@@ -41,9 +41,9 @@ def _should_print_tool_output_preview(tool_name: str, output: str) -> bool:
     if tool_name != BASH_TOOL_NAME:
         return True
     return (
-        stripped.startswith("Error:")
-        or stripped == "(no output)"
-        or stripped.startswith("Started background bash task ")
+            stripped.startswith("Error:")
+            or stripped == "(no output)"
+            or stripped.startswith("Started background bash task ")
     )
 
 
@@ -131,8 +131,8 @@ def run_with_working_counter(callable_obj: Callable[[], Any]) -> tuple[Any | Non
 
 
 def print_response_items(
-    response: Any,
-    history: list[Any],
+        response: Any,
+        history: list[Any],
 ) -> list[Any]:
     # 统一打印模型输出，并把 assistant 消息和 function_call 写回 history。
     tool_calls: list[Any] = []
@@ -182,8 +182,8 @@ def print_response_items(
 
 
 def run_tool_call(
-    tool_call: Any,
-    handlers: dict[str, Callable[[dict[str, Any]], Any]]
+        tool_call: Any,
+        handlers: dict[str, Callable[[dict[str, Any]], Any]]
 ) -> dict[str, str]:
     # 执行单次工具调用，负责终端展示、中断处理和 function_call_output 封装。
     tool_name = tool_call.name
@@ -273,16 +273,16 @@ def run_tool_call(
 
 
 def run_until_no_tool_call(
-    client: OpenAI,
-    model: str,
-    effort: str,
-    token_threshold: int,
-    keep_recent_tool_outputs: int,
-    min_compact_output_length: int,
-    keep_recent_messages_count: int,
-    history: list[dict[str, Any] | Any],
-    tools: list[dict[str, Any]],
-    handlers: dict[str, Callable[[dict[str, Any]], Any]],
+        client: OpenAI,
+        model: str,
+        effort: str,
+        token_threshold: int,
+        keep_recent_tool_outputs: int,
+        min_compact_output_length: int,
+        keep_recent_messages_count: int,
+        history: list[dict[str, Any] | Any],
+        tools: list[dict[str, Any]],
+        handlers: dict[str, Callable[[dict[str, Any]], Any]],
 ) -> None:
     # 驱动一轮完整的 agent 交互，直到模型不再返回新的工具调用。
     while True:
@@ -310,7 +310,8 @@ def run_until_no_tool_call(
                 input=history,
                 tools=tools,
                 reasoning={"effort": effort, "summary": "auto"},
-                store=True
+                store=True,
+                prompt_cache_key="telestar"
             )
         )
         if cancelled:
