@@ -311,7 +311,8 @@ def run_until_no_tool_call(
                 tools=tools,
                 reasoning={"effort": effort, "summary": "auto"},
                 store=True,
-                prompt_cache_key="telestar"
+                prompt_cache_key="telestar",
+                prompt_cache_retention="24h"
             )
         )
         if cancelled:
