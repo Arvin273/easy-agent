@@ -32,7 +32,7 @@ def handle(args: list[str]) -> bool:
             status_filter = {"running"}
             continue
         if arg == "--done":
-            status_filter = {"completed", "failed", "timed_out"}
+            status_filter = {"completed", "failed", "timed_out", "cancelled"}
             continue
         if arg.startswith("--"):
             print_text(Colors.error, f"Unknown jobs option: {arg}\n\n")

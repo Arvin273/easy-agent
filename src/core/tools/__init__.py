@@ -13,6 +13,9 @@ from core.tools.bash import TOOL_NAME as BASH_TOOL_NAME
 from core.tools.bash import JOBS_TOOL_DEF as BASH_JOBS_TOOL_DEF
 from core.tools.bash import JOBS_TOOL_HANDLER as BASH_JOBS_TOOL_HANDLER
 from core.tools.bash import JOBS_TOOL_NAME as BASH_JOBS_TOOL_NAME
+from core.tools.bash import STOP_TOOL_DEF as BASH_STOP_TOOL_DEF
+from core.tools.bash import STOP_TOOL_HANDLER as BASH_STOP_TOOL_HANDLER
+from core.tools.bash import STOP_TOOL_NAME as BASH_STOP_TOOL_NAME
 from core.tools.common import WORKDIR
 from core.tools.edit_file import TOOL_DEF as EDIT_FILE_TOOL_DEF
 from core.tools.edit_file import TOOL_HANDLER as EDIT_FILE_TOOL_HANDLER
@@ -37,6 +40,7 @@ from core.mcp import MCPRegistry
 TOOL_HANDLERS = {
     BASH_TOOL_NAME: BASH_TOOL_HANDLER,
     BASH_JOBS_TOOL_NAME: BASH_JOBS_TOOL_HANDLER,
+    BASH_STOP_TOOL_NAME: BASH_STOP_TOOL_HANDLER,
     READ_FILE_TOOL_NAME: READ_FILE_TOOL_HANDLER,
     WRITE_FILE_TOOL_NAME: WRITE_FILE_TOOL_HANDLER,
     EDIT_FILE_TOOL_NAME: EDIT_FILE_TOOL_HANDLER,
@@ -48,6 +52,7 @@ TOOL_HANDLERS = {
 TOOLS = [
     BASH_TOOL_DEF,
     BASH_JOBS_TOOL_DEF,
+    BASH_STOP_TOOL_DEF,
     READ_FILE_TOOL_DEF,
     WRITE_FILE_TOOL_DEF,
     EDIT_FILE_TOOL_DEF,

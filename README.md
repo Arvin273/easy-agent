@@ -6,6 +6,7 @@ Easy Agent 是一个运行在终端里的轻量级智能助手，面向日常开
 
 - 在命令行中直接与 Agent 对话
 - 内置文件读取、搜索、编辑、Bash 等工具
+- Bash 工具支持后台任务查询、取消，以及超时后的输出预览
 - 支持项目级和用户级 `skills`
 - 支持自动会话压缩与 token 估算
 - 支持通过 `stdio`、`sse`、`streamable_http` 接入 MCP Server

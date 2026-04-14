@@ -88,6 +88,7 @@ class _TerminalOutputNormalizer:
     def __init__(self) -> None:
         self._current_line = ""
         self._pending_carriage_return = False
+        self._escape_buffer = ""
 
     def feed(self, text: str) -> str:
         if not text:
@@ -95,6 +96,14 @@ class _TerminalOutputNormalizer:
 
         normalized_parts: list[str] = []
         for char in text:
+            if self._escape_buffer:
+                self._escape_buffer += char
+                if self._consume_escape_buffer():
+                    continue
+                if len(self._escape_buffer) > 32:
+                    self._escape_buffer = ""
+                continue
+
             if self._pending_carriage_return:
                 if char == "\n":
                     normalized_parts.append(self._current_line)
@@ -108,6 +117,12 @@ class _TerminalOutputNormalizer:
             if char == "\r":
                 self._pending_carriage_return = True
                 continue
+            if char == "\x1b":
+                self._escape_buffer = char
+                continue
+            if char == "\b":
+                self._current_line = self._current_line[:-1]
+                continue
             if char == "\n":
                 normalized_parts.append(self._current_line)
                 normalized_parts.append("\n")
@@ -119,11 +134,45 @@ class _TerminalOutputNormalizer:
 
     def flush(self) -> str:
         self._pending_carriage_return = False
+        self._escape_buffer = ""
         if not self._current_line:
             return ""
         tail = self._current_line
         self._current_line = ""
         return tail
+
+    def _consume_escape_buffer(self) -> bool:
+        if self._escape_buffer == "\x1b":
+            return True
+        if not self._escape_buffer.startswith("\x1b["):
+            self._escape_buffer = ""
+            return False
+
+        suffix = self._escape_buffer[-1]
+        if suffix.isalpha():
+            parameter_text = self._escape_buffer[2:-1]
+            self._apply_csi(parameter_text, suffix)
+            self._escape_buffer = ""
+            return True
+        return True
+
+    def _apply_csi(self, parameter_text: str, command: str) -> None:
+        params = [part for part in parameter_text.split(";") if part]
+        if command == "K":
+            if not params or params[0] in {"0", "2"}:
+                self._current_line = ""
+            return
+
+        count = 1
+        if params:
+            try:
+                count = max(int(params[0]), 0)
+            except ValueError:
+                return
+        if command == "D":
+            self._current_line = self._current_line[:-count]
+        elif command == "C":
+            self._current_line += " " * count
 
 
 @lru_cache(maxsize=1)
@@ -263,6 +312,7 @@ class _LiveBashPreview:
         self._rendered_lines = 0
         self._started_at = started_at
         self._enabled = sys.stdout.isatty() and ANSI_ENABLED
+        self._plain_text_buffer = ""
 
     def append(self, text: str) -> None:
         if not text:
@@ -271,7 +321,8 @@ class _LiveBashPreview:
             if self._enabled:
                 self._render()
             else:
-                print_text(Colors.reason, text)
+                self._plain_text_buffer += text
+                self._flush_plain_text_lines()
 
     def tick(self) -> None:
         if not self._enabled:
@@ -281,6 +332,10 @@ class _LiveBashPreview:
 
     def finalize(self) -> None:
         if not self._enabled:
+            with self._lock:
+                if self._plain_text_buffer:
+                    print_text(Colors.reason, self._plain_text_buffer)
+                    self._plain_text_buffer = ""
             if self._buffer.get_preview_text():
                 sys.stdout.write("\n")
                 sys.stdout.flush()
@@ -302,6 +357,15 @@ class _LiveBashPreview:
         sys.stdout.flush()
         self._rendered_lines = len(display_lines)
 
+    def _flush_plain_text_lines(self) -> None:
+        while True:
+            newline_index = self._plain_text_buffer.find("\n")
+            if newline_index < 0:
+                return
+            line = self._plain_text_buffer[: newline_index + 1]
+            print_text(Colors.reason, line)
+            self._plain_text_buffer = self._plain_text_buffer[newline_index + 1 :]
+
 
 @dataclass
 class _BackgroundTaskState:
@@ -318,6 +382,7 @@ class _BackgroundTaskState:
 
     def snapshot(self, include_output: bool = False) -> dict[str, Any]:
         elapsed_seconds = (self.finished_at or time.time()) - self.started_at
+        preview = self.output_buffer.get_preview_text().strip()
         data = {
             "task_id": self.task_id,
             "command": self.command,
@@ -333,7 +398,6 @@ class _BackgroundTaskState:
             "elapsed_seconds": round(elapsed_seconds, 3),
         }
         output = self.output_buffer.get_output().strip()
-        preview = "\n".join(_format_live_preview(output, edge_lines=PREVIEW_EDGE_LINES)) if output else ""
         data["preview"] = preview
         if include_output:
             data["output"] = output
@@ -433,6 +497,9 @@ def _run_foreground_process(
 
     if timed_out:
         seconds = timeout_ms / 1000
+        preview = output_buffer.get_preview_text().strip()
+        if preview:
+            return f"Error: Timeout ({seconds:g}s)\n\nPreview:\n{preview}"
         return f"Error: Timeout ({seconds:g}s)"
 
     output = output_buffer.get_output().strip()
@@ -468,6 +535,10 @@ def _monitor_background_task(task_id: str) -> None:
         current = _BACKGROUND_TASKS.get(task_id)
         if current is None:
             return
+        if current.status == "cancelled":
+            current.finished_at = current.finished_at or time.time()
+            current.return_code = current.return_code if current.return_code is not None else task.process.returncode
+            return
         current.return_code = task.process.returncode
         current.finished_at = time.time()
         if timed_out:
@@ -496,6 +567,24 @@ def _start_background_task(command: str, description: str, timeout_ms: int) -> s
     return task_id
 
 
+def stop_background_bash_task(task_id: str) -> str:
+    with _BACKGROUND_TASKS_LOCK:
+        task = _BACKGROUND_TASKS.get(task_id)
+        if task is None:
+            return f"Error: 未找到后台 Bash 任务 {task_id}"
+        if task.status != "running":
+            return f"Background bash task {task_id} is already {task.status}"
+        task.status = "cancelled"
+        task.finished_at = time.time()
+
+    _terminate_process_tree(task.process)
+    try:
+        task.return_code = task.process.wait(timeout=1)
+    except subprocess.TimeoutExpired:
+        task.return_code = task.process.returncode
+    return f"Cancelled background bash task {task_id}"
+
+
 def get_background_bash_tasks(
     *,
     task_id: str | None = None,
@@ -510,8 +599,8 @@ def get_background_bash_tasks(
     if status is not None:
         tasks = [task for task in tasks if task.status == status]
 
+    tasks.sort(key=lambda task: task.started_at)
     snapshots = [task.snapshot(include_output=include_output) for task in tasks]
-    snapshots.sort(key=lambda item: item["task_id"])
     return snapshots
 
 
@@ -554,8 +643,8 @@ def run_bash_jobs(arguments: dict[str, Any]) -> str:
     if status is not None:
         if not isinstance(status, str):
             raise ValueError("status 参数必须是字符串。")
-        if status not in {"running", "completed", "failed", "timed_out"}:
-            raise ValueError("status 只能是 running、completed、failed 或 timed_out。")
+        if status not in {"running", "completed", "failed", "timed_out", "cancelled"}:
+            raise ValueError("status 只能是 running、completed、failed、timed_out 或 cancelled。")
 
     tasks = get_background_bash_tasks(
         task_id=task_id.strip() if isinstance(task_id, str) and task_id.strip() else None,
@@ -563,6 +652,13 @@ def run_bash_jobs(arguments: dict[str, Any]) -> str:
         include_output=include_output,
     )
     return json.dumps({"tasks": tasks}, ensure_ascii=False, indent=2)
+
+
+def run_bash_stop(arguments: dict[str, Any]) -> str:
+    task_id = arguments.get("task_id")
+    if not isinstance(task_id, str) or not task_id.strip():
+        raise ValueError("缺少有效的 task_id 参数。")
+    return stop_background_bash_task(task_id.strip())
 
 
 TOOL_NAME = "Bash"
@@ -601,11 +697,27 @@ JOBS_TOOL_DEF = {
             "task_id": {"type": "string", "description": "可选，指定后台任务 ID，例如 bash-1"},
             "status": {
                 "type": "string",
-                "enum": ["running", "completed", "failed", "timed_out"],
+                "enum": ["running", "completed", "failed", "timed_out", "cancelled"],
                 "description": "可选，按任务状态过滤",
             },
             "include_output": {"type": "boolean", "description": "是否返回完整输出，默认 false"},
         },
+        "additionalProperties": False,
+    },
+}
+
+STOP_TOOL_NAME = "BashStop"
+STOP_TOOL_HANDLER = run_bash_stop
+STOP_TOOL_DEF = {
+    "type": "function",
+    "name": STOP_TOOL_NAME,
+    "description": "取消指定的后台 Bash 任务。若任务已结束，会直接返回当前状态，不报错。",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "task_id": {"type": "string", "description": "要取消的后台任务 ID，例如 bash-1"},
+        },
+        "required": ["task_id"],
         "additionalProperties": False,
     },
 }
