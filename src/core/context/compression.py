@@ -5,12 +5,42 @@ from typing import Any
 
 from openai import OpenAI
 
+
+def _count_chars(value: Any) -> int:
+    if value is None:
+        return 0
+    if isinstance(value, str):
+        return len(value)
+    if isinstance(value, list):
+        return sum(_count_chars(item) for item in value)
+    if isinstance(value, dict):
+        return sum(_count_chars(item) for item in value.values())
+    return len(str(value))
+
+
 def estimate_tokens(messages: list[dict[str, Any] | Any]) -> int:
-    try:
-        payload = json.dumps(messages, ensure_ascii=False, default=str)
-    except Exception:
-        payload = str(messages)
-    return len(payload)
+    total = 0
+    for item in messages:
+        if not isinstance(item, dict):
+            total += _count_chars(item)
+            continue
+
+        item_type = str(item.get("type") or "")
+        if item_type == "function_call":
+            total += _count_chars(item.get("name"))
+            total += _count_chars(item.get("arguments"))
+            total += _count_chars(item.get("call_id"))
+            continue
+
+        if item_type == "function_call_output":
+            total += _count_chars(item.get("call_id"))
+            total += _count_chars(item.get("output"))
+            continue
+
+        total += _count_chars(item.get("role"))
+        total += _count_chars(item.get("content"))
+
+    return total
 
 
 def micro_compact(
