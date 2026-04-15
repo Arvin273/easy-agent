@@ -20,6 +20,7 @@ from core.tools.common import WORKDIR, parse_optional_int
 MAX_OUTPUT_CHARS = 50_000
 MAX_PREVIEW_CHARS = 12_000
 PREVIEW_EDGE_LINES = 3
+PREVIEW_LINE_MAX_WIDTH = 160
 
 _ACTIVE_PROCESSES_LOCK = threading.Lock()
 _ACTIVE_PROCESSES: set[subprocess.Popen[bytes]] = set()
@@ -29,12 +30,19 @@ _BACKGROUND_TASKS: dict[str, "_BackgroundTaskState"] = {}
 _BACKGROUND_TASK_COUNTER = count(1)
 
 def _format_live_preview(text: str, edge_lines: int = 4) -> list[str]:
-    lines = text.splitlines()
+    lines = [_truncate_preview_line(line) for line in text.splitlines()]
     max_lines = edge_lines * 2
     if len(lines) <= max_lines:
         return lines
     hidden = len(lines) - max_lines
     return lines[:edge_lines] + [f"... ({hidden} more lines)"] + lines[-edge_lines:]
+
+
+def _truncate_preview_line(line: str, max_width: int = PREVIEW_LINE_MAX_WIDTH) -> str:
+    if len(line) <= max_width:
+        return line
+    hidden = len(line) - max_width
+    return f"{line[:max_width]}... ({hidden} more chars)"
 
 
 def _coerce_bool(value: Any, field_name: str) -> bool:
