@@ -18,7 +18,7 @@ from core.commands import skills as skills_command
 from core.commands import tools as tools_command
 from core.commands import tokens as tokens_command
 from core.context.skill_manager import SkillManager
-from core.terminal.cli_output import Colors, print_text
+from core.terminal.cli_output import Colors, print_marked_text
 
 
 @dataclass(frozen=True)
@@ -143,5 +143,5 @@ def handle_slash_command(
             args=parts[1:],
         )
         return handler(context)
-    print_text(Colors.error, f"Unknown slash command: {query}。输入 /help 查看可用命令。\n\n")
+    print_marked_text(content=f"Unknown slash command: {query}。输入 /help 查看可用命令。\n\n", marker="■", body_color=Colors.error, marker_color=Colors.error)
     return False

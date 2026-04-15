@@ -83,7 +83,7 @@ def agent_loop(
 def handle_shell_command(query: str) -> None:
     command = query[1:].strip()
     if not command:
-        print_text(Colors.error, "缺少要执行的命令。\n\n")
+        print_marked_text(content="缺少要执行的命令。\n\n", marker="■", body_color=Colors.error, marker_color=Colors.error)
         return
 
     try:
@@ -96,7 +96,7 @@ def main() -> None:
     try:
         config = load_agent_config()
     except Exception as exc:
-        print_text(Colors.error, content=str(exc) + '\n')
+        print_marked_text(content=str(exc) + '\n', marker="■", body_color=Colors.error, marker_color=Colors.error)
         return
 
     client = OpenAI(
@@ -158,7 +158,7 @@ def main() -> None:
                     config = load_agent_config()
                     TOOL_REGISTRY.refresh(config)
                 except Exception as exc:
-                    print_text(Colors.error, content=str(exc) + '\n')
+                    print_marked_text(content=str(exc) + '\n', marker="■", body_color=Colors.error, marker_color=Colors.error)
                 for error in TOOL_REGISTRY.mcp_registry.errors:
                     print_marked_text(content=error + "\n", marker="■", body_color=Colors.error, marker_color=Colors.error)
                 continue

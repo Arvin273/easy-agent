@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from core.terminal.cli_output import Colors, print_text, print_title_and_content
+from core.terminal.cli_output import Colors, print_text, print_title_and_content, print_marked_text
 from core.tools.bash import get_background_bash_tasks
 
 COMMAND = "/jobs"
@@ -35,10 +35,10 @@ def handle(args: list[str]) -> bool:
             status_filter = {"completed", "failed", "timed_out", "cancelled"}
             continue
         if arg.startswith("--"):
-            print_text(Colors.error, f"Unknown jobs option: {arg}\n\n")
+            print_marked_text(content=f"Unknown jobs option: {arg}\n\n", marker="■", body_color=Colors.error, marker_color=Colors.error)
             return False
         if task_id is not None:
-            print_text(Colors.error, "用法错误：/jobs 只支持一个 task_id。\n\n")
+            print_marked_text(content="用法错误：/jobs 只支持一个 task_id。\n\n", marker="■", body_color=Colors.error, marker_color=Colors.error)
             return False
         task_id = arg
 
@@ -47,7 +47,7 @@ def handle(args: list[str]) -> bool:
         tasks = [task for task in tasks if str(task.get("status")) in status_filter]
 
     if include_output and task_id is None:
-        print_text(Colors.error, "用法错误：/jobs --output 需要配合 task_id 使用。\n\n")
+        print_marked_text(content="用法错误：/jobs --output 需要配合 task_id 使用。\n\n", marker="■", body_color=Colors.error, marker_color=Colors.error)
         return False
 
     if not tasks:

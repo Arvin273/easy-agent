@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from core.config.config_manager import CONFIG_PATH, PATHS, load_agent_config
-from core.terminal.cli_output import Colors, print_text, print_title_and_content
+from core.terminal.cli_output import Colors, print_title_and_content, print_marked_text
 
 COMMAND = "/config"
 DESCRIPTION = "查看当前配置"
@@ -19,7 +19,7 @@ def handle() -> bool:
     try:
         config = load_agent_config()
     except Exception as exc:
-        print_text(Colors.error, f"读取配置失败: {exc}\n\n")
+        print_marked_text(content=f"读取配置失败: {exc}\n\n", marker="■", body_color=Colors.error, marker_color=Colors.error)
         return False
 
     lines = [

@@ -41,13 +41,6 @@ class OutputTheme:
 
 
 THEME = OutputTheme()
-SLASH_HINTS = (
-    "/help 查看可用命令",
-    "/skills 查看已安装技能",
-    "/model 切换模型与推理强度",
-    "/compact 手动压缩当前会话上下文",
-    "/exit 退出会话",
-)
 
 
 def _resolve_version(default: str = "0.0.1") -> str:
@@ -85,7 +78,7 @@ def _random_slash_hint(command_descriptions: dict[str, str] | None = None) -> st
         ]
         if dynamic_hints:
             return random.choice(dynamic_hints)
-    return random.choice(SLASH_HINTS)
+    return ""
 
 
 def _char_display_width(ch: str) -> int:

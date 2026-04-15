@@ -6,7 +6,7 @@ import sys
 from shutil import which
 from typing import Any
 
-from core.terminal.cli_output import Colors, print_text
+from core.terminal.cli_output import Colors, print_text, print_marked_text
 
 COMMAND = "/copy"
 DESCRIPTION = "复制最后一条 AI 回复"
@@ -110,13 +110,13 @@ def _copy_to_windows_clipboard(content: str) -> None:
 def handle(history: list[dict[str, Any] | Any] | None) -> bool:
     content = _find_last_assistant_message(history)
     if content is None:
-        print_text(Colors.error, "当前会话里没有可复制的 AI 回复。\n\n")
+        print_marked_text(content="当前会话里没有可复制的 AI 回复。\n\n", marker="■", body_color=Colors.error, marker_color=Colors.error)
         return False
 
     try:
         _copy_to_clipboard(content)
     except Exception as exc:
-        print_text(Colors.error, f"复制失败: {exc}\n\n")
+        print_marked_text(content=f"复制失败: {exc}\n\n", marker="■", body_color=Colors.error, marker_color=Colors.error)
         return False
 
     print_text(Colors.green, "已复制最后一条 AI 回复到剪贴板。\n\n")

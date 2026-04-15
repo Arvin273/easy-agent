@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from core.config.config_manager import CONFIG_PATH, DEFAULT_EFFORT, DEFAULT_MODEL
-from core.terminal.cli_output import print_title_and_content, print_text, Colors
+from core.terminal.cli_output import print_title_and_content, Colors, print_marked_text
 from core.terminal.prompt_ui import select_option
 
 COMMAND = "/model"
@@ -63,7 +63,7 @@ def handle() -> bool:
     try:
         payload = _load_config_payload()
     except Exception as exc:
-        print_text(Colors.error, f"读取配置失败: {exc}\n")
+        print_marked_text(content=f"读取配置失败: {exc}\n", marker="■", body_color=Colors.error, marker_color=Colors.error)
         return False
 
     current_model = str(payload.get("model") or DEFAULT_MODEL).strip() or DEFAULT_MODEL
@@ -94,7 +94,7 @@ def handle() -> bool:
     try:
         _save_config_payload(payload)
     except Exception as exc:
-        print_text(Colors.error, f"保存配置失败: {exc}\n")
+        print_marked_text(content=f"保存配置失败: {exc}\n", marker="■", body_color=Colors.error, marker_color=Colors.error)
         return False
 
     print_title_and_content(Colors.green, f"已切换配置:\nmodel: {model}\neffort: {effort}\n\n", title="Model Updated")
