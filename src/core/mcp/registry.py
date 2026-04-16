@@ -58,7 +58,7 @@ class MCPRegistry:
     def errors(self) -> list[str]:
         return list(self._errors)
 
-    def refresh(self, servers: list[MCPServerConfig]) -> bool:
+    def initialize(self, servers: list[MCPServerConfig]) -> bool:
         next_key = self._build_config_key(servers)
         if next_key == self._config_key:
             return False

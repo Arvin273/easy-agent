@@ -1,4 +1,5 @@
 from typing import Any
+from uuid import uuid4
 
 import httpx
 from openai import OpenAI
@@ -32,24 +33,6 @@ def build_system_prompt(skill_manager: SkillManager) -> str:
         return f"{system_prompt}\n\n{skill_section}"
     return system_prompt
 
-
-def refresh_tools_and_system_prompt(history: list[dict[str, Any] | Any], config: Any) -> None:
-    changed = TOOL_REGISTRY.refresh(config)
-    if not changed or not history:
-        return
-    first = history[0]
-    if isinstance(first, dict) and first.get("role") == "system":
-        first["content"] = build_system_prompt(SKILL_MANAGER)
-
-
-def refresh_agents_system_messages(history: list[dict[str, Any] | Any]) -> None:
-    if not history:
-        return
-    base_message = history[:1]
-    other_messages = [message for message in history[1:] if not message.get("role") == "system"]
-    history[:] = [*base_message, *load_agents_system_messages(), *other_messages]
-
-
 def get_prompt_command_descriptions() -> dict[str, str]:
     descriptions = get_slash_command_descriptions()
     for skill in SKILL_MANAGER.discover_skills():
@@ -61,6 +44,7 @@ def agent_loop(
     client: OpenAI,
     model: str,
     effort: str,
+    prompt_cache_key: str,
     token_threshold: int,
     keep_recent_tool_outputs: int,
     min_compact_output_length: int,
@@ -72,6 +56,7 @@ def agent_loop(
         client=client,
         model=model,
         effort=effort,
+        prompt_cache_key=prompt_cache_key,
         token_threshold=token_threshold,
         keep_recent_tool_outputs=keep_recent_tool_outputs,
         min_compact_output_length=min_compact_output_length,
@@ -107,14 +92,17 @@ def main() -> None:
         http_client=httpx.Client(verify=False),
     )
     try:
+        session_prompt_cache_key = uuid4().hex
+        command_descriptions = get_prompt_command_descriptions()
+
         print_startup_banner(
             model=config.model,
             effort=config.effort,
             directory=SKILL_MANAGER.workdir.as_posix(),
-            command_descriptions=get_prompt_command_descriptions(),
+            command_descriptions=command_descriptions
         )
 
-        TOOL_REGISTRY.refresh(config)
+        TOOL_REGISTRY.initialize(config)
         for error in TOOL_REGISTRY.mcp_registry.errors:
             print_marked_text(content=error + "\n", marker="■", body_color=Colors.error, marker_color=Colors.error)
 
@@ -133,7 +121,7 @@ def main() -> None:
                 query = read_user_input(
                     "> ",
                     history=input_history,
-                    command_descriptions=get_prompt_command_descriptions(),
+                    command_descriptions=command_descriptions,
                 ).strip()
             except (EOFError, KeyboardInterrupt):
                 print()
@@ -156,11 +144,6 @@ def main() -> None:
                 )
                 if should_exit:
                     break
-                try:
-                    config = load_agent_config()
-                    TOOL_REGISTRY.refresh(config)
-                except Exception as exc:
-                    print_marked_text(content=str(exc) + '\n', marker="■", body_color=Colors.error, marker_color=Colors.error)
                 for error in TOOL_REGISTRY.mcp_registry.errors:
                     print_marked_text(content=error + "\n", marker="■", body_color=Colors.error, marker_color=Colors.error)
                 continue
@@ -170,8 +153,6 @@ def main() -> None:
                 continue
 
             history.append({"role": "user", "content": query})
-            refresh_tools_and_system_prompt(history, config)
-            refresh_agents_system_messages(history)
             for error in TOOL_REGISTRY.mcp_registry.errors:
                 print_marked_text(content=error + "\n", marker="■", body_color=Colors.error, marker_color=Colors.error)
             try:
@@ -179,6 +160,7 @@ def main() -> None:
                     client=client,
                     model=config.model,
                     effort=config.effort,
+                    prompt_cache_key=session_prompt_cache_key,
                     token_threshold=config.token_threshold,
                     keep_recent_tool_outputs=config.keep_recent_tool_outputs,
                     min_compact_output_length=config.min_compact_output_length,

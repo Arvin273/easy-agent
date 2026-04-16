@@ -30,7 +30,6 @@ class SkillManager:
         self.workdir = self.paths.workdir
         self.home = self.paths.home
         self._skills_cache: list[SkillInfo] | None = None
-        self._cache_stamp: tuple[str, ...] | None = None
 
     def _candidate_roots(self) -> list[Path]:
         roots: list[Path] = []
@@ -38,23 +37,6 @@ class SkillManager:
             if root not in roots:
                 roots.append(root)
         return roots
-
-    def _build_cache_stamp(self) -> tuple[str, ...]:
-        stamp: list[str] = []
-        for root in self._candidate_roots():
-            if not root.exists() or not root.is_dir():
-                stamp.append(f"{root}|missing")
-                continue
-            stamp.append(f"{root}|dir")
-            for skill_dir in sorted(item for item in root.iterdir() if item.is_dir()):
-                skill_file = skill_dir / SKILL_FILE_NAME
-                if not skill_file.exists() or not skill_file.is_file():
-                    continue
-                stat = skill_file.stat()
-                stamp.append(
-                    f"{skill_file}|{stat.st_mtime_ns}|{stat.st_size}"
-                )
-        return tuple(stamp)
 
     @staticmethod
     def _parse_skill_metadata(skill_file: Path, directory_name: str) -> tuple[str, str]:
@@ -119,13 +101,8 @@ class SkillManager:
 
         return (name or directory_name)[:120], description[:240]
 
-    def discover_skills(self, force_refresh: bool = False) -> list[SkillInfo]:
-        new_stamp = self._build_cache_stamp()
-        if (
-            not force_refresh
-            and self._skills_cache is not None
-            and self._cache_stamp == new_stamp
-        ):
+    def discover_skills(self) -> list[SkillInfo]:
+        if self._skills_cache is not None:
             return list(self._skills_cache)
 
         skills_by_key: dict[str, SkillInfo] = {}
@@ -148,7 +125,6 @@ class SkillManager:
                 )
         result = list(skills_by_key.values())
         self._skills_cache = result
-        self._cache_stamp = new_stamp
         return list(result)
 
     def build_system_section(self) -> str:
@@ -196,11 +172,6 @@ class SkillManager:
 
     def get_handlers(self) -> dict[str, Callable[[dict[str, Any]], Any]]:
         return {"Skill": self.run_read_skill}
-
-    def refresh(self) -> bool:
-        old_stamp = self._cache_stamp
-        self.discover_skills(force_refresh=True)
-        return old_stamp != self._cache_stamp
 
     def run_read_skill(self, arguments: dict[str, Any]) -> dict[str, str] | str:
         name = arguments.get("name")

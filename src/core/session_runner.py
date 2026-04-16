@@ -276,6 +276,7 @@ def run_until_no_tool_call(
         client: OpenAI,
         model: str,
         effort: str,
+        prompt_cache_key: str,
         token_threshold: int,
         keep_recent_tool_outputs: int,
         min_compact_output_length: int,
@@ -311,7 +312,7 @@ def run_until_no_tool_call(
                 tools=tools,
                 reasoning={"effort": effort, "summary": "auto"},
                 store=True,
-                prompt_cache_key="019d9f03-41cd-7401-bba5-51d1079fa9ac"
+                prompt_cache_key=prompt_cache_key,
             )
         )
         if cancelled:

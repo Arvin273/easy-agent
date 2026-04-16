@@ -74,12 +74,11 @@ class ToolRegistry:
         self.mcp_registry = MCPRegistry()
         self._cached_bundle: ToolBundle | None = None
 
-    def refresh(self, config: AgentConfig | None = None) -> bool:
-        changed = self.skill_manager.refresh()
+    def initialize(self, config: AgentConfig | None = None) -> None:
+        self.skill_manager.discover_skills()
         if config is not None:
-            changed = self.mcp_registry.refresh(config.mcp_servers) or changed
+            self.mcp_registry.initialize(config.mcp_servers)
         self._cached_bundle = self._build_bundle()
-        return changed
 
     def get_bundle(self) -> ToolBundle:
         if self._cached_bundle is None:
