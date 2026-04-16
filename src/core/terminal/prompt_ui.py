@@ -274,6 +274,7 @@ def _run_text_prompt(
         ),
         style=lambda: _get_input_style(buffer),
         dont_extend_height=True,
+        wrap_lines=True,
     )
 
     show_completion_menu = Condition(lambda: _has_completion_matches(buffer, completer))
