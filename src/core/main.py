@@ -46,8 +46,6 @@ def agent_loop(
     effort: str,
     prompt_cache_key: str,
     token_threshold: int,
-    keep_recent_tool_outputs: int,
-    min_compact_output_length: int,
     keep_recent_messages_count: int,
     history: list[dict[str, Any] | Any],
 ) -> None:
@@ -58,8 +56,6 @@ def agent_loop(
         effort=effort,
         prompt_cache_key=prompt_cache_key,
         token_threshold=token_threshold,
-        keep_recent_tool_outputs=keep_recent_tool_outputs,
-        min_compact_output_length=min_compact_output_length,
         keep_recent_messages_count=keep_recent_messages_count,
         history=history,
         tools=bundle.tools,
@@ -162,8 +158,6 @@ def main() -> None:
                     effort=config.effort,
                     prompt_cache_key=session_prompt_cache_key,
                     token_threshold=config.token_threshold,
-                    keep_recent_tool_outputs=config.keep_recent_tool_outputs,
-                    min_compact_output_length=config.min_compact_output_length,
                     keep_recent_messages_count=config.keep_recent_messages_count,
                     history=history,
                 )

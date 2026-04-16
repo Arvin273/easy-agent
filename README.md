@@ -58,8 +58,6 @@ Agent 会把当前目录当作工作目录。例如你在 `D:\code\project\demo`
   "model": "gpt-5.4",
   "effort": "medium",
   "token_threshold": 100000,
-  "keep_recent_tool_outputs": 10,
-  "min_compact_output_length": 100,
   "keep_recent_messages_count": 10
 }
 ```
@@ -71,8 +69,6 @@ Agent 会把当前目录当作工作目录。例如你在 `D:\code\project\demo`
 - `model`：模型名，默认 `gpt-5.4`
 - `effort`：推理强度，可选 `none`、`minimal`、`low`、`medium`、`high`、`xhigh`
 - `token_threshold`：触发自动压缩的 token 阈值
-- `keep_recent_tool_outputs`：最近保留多少条工具输出
-- `min_compact_output_length`：达到该长度的工具输出才参与微压缩
 - `keep_recent_messages_count`：压缩时保留的最近消息数量
 
 ## MCP 配置

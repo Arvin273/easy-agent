@@ -15,7 +15,6 @@ from core.tools.bash import TOOL_NAME as BASH_TOOL_NAME
 from core.context.compression import (
     compact_history,
     estimate_tokens,
-    micro_compact,
 )
 from core.utils.session_runner_utils import (
     format_tool_output_preview,
@@ -278,8 +277,6 @@ def run_until_no_tool_call(
         effort: str,
         prompt_cache_key: str,
         token_threshold: int,
-        keep_recent_tool_outputs: int,
-        min_compact_output_length: int,
         keep_recent_messages_count: int,
         history: list[dict[str, Any] | Any],
         tools: list[dict[str, Any]],
@@ -288,13 +285,7 @@ def run_until_no_tool_call(
     # 驱动一轮完整的 agent 交互，直到模型不再返回新的工具调用。
     while True:
         repair_incomplete_tool_history(history)
-        # Layer 1: lightweight compaction before each model call.
-        micro_compact(
-            history,
-            keep_recent_tool_outputs=keep_recent_tool_outputs,
-            min_compact_output_length=min_compact_output_length,
-        )
-        # Layer 2: auto-compaction by token threshold.
+        # Auto-compaction by token threshold.
         if estimate_tokens(history) > token_threshold:
             print_text(Colors.reason, "Compacting...\n")
             history[:] = compact_history(

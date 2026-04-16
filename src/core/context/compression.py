@@ -43,38 +43,6 @@ def estimate_tokens(messages: list[dict[str, Any] | Any]) -> int:
     return total
 
 
-def micro_compact(
-    history: list[dict[str, Any] | Any],
-    keep_recent_tool_outputs: int,
-    min_compact_output_length: int,
-) -> None:
-    tool_outputs: list[dict[str, Any]] = []
-    call_to_tool: dict[str, str] = {}
-
-    for item in history:
-        if not isinstance(item, dict):
-            continue
-        if item.get("type") == "function_call":
-            call_id = str(item.get("call_id") or "")
-            tool_name = str(item.get("name") or "unknown")
-            if call_id:
-                call_to_tool[call_id] = tool_name
-        if item.get("type") == "function_call_output":
-            tool_outputs.append(item)
-
-    if len(tool_outputs) <= keep_recent_tool_outputs:
-        return
-
-    to_compact = tool_outputs[:-keep_recent_tool_outputs]
-    for output_item in to_compact:
-        output_text = output_item.get("output")
-        if not isinstance(output_text, str) or len(output_text) <= min_compact_output_length:
-            continue
-        call_id = str(output_item.get("call_id") or "")
-        tool_name = call_to_tool.get(call_id, "unknown")
-        output_item["output"] = f"[Previous: used {tool_name}]"
-
-
 def compact_prompt(messages: list[dict[str, Any] | Any], focus: str | None = None) -> str:
     conversation_text = json.dumps(messages, ensure_ascii=False, default=str)
     focus_text = f"\n额外关注点：{focus}\n" if focus else "\n"

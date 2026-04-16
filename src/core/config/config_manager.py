@@ -8,8 +8,6 @@ from typing import Any
 DEFAULT_MODEL = "gpt-5.4"
 DEFAULT_EFFORT = "medium"
 DEFAULT_TOKEN_THRESHOLD = 256000
-DEFAULT_KEEP_RECENT_TOOL_OUTPUTS = 10
-DEFAULT_MIN_COMPACT_OUTPUT_LENGTH = 100
 DEFAULT_KEEP_RECENT_MESSAGES_COUNT = 10
 
 
@@ -62,8 +60,6 @@ class AgentConfig:
     model: str
     effort: str
     token_threshold: int
-    keep_recent_tool_outputs: int
-    min_compact_output_length: int
     keep_recent_messages_count: int
     mcp_servers: list["MCPServerConfig"]
 
@@ -124,10 +120,21 @@ def _default_config_values() -> dict[str, str | int | list[Any]]:
         "model": DEFAULT_MODEL,
         "effort": DEFAULT_EFFORT,
         "token_threshold": DEFAULT_TOKEN_THRESHOLD,
-        "keep_recent_tool_outputs": DEFAULT_KEEP_RECENT_TOOL_OUTPUTS,
-        "min_compact_output_length": DEFAULT_MIN_COMPACT_OUTPUT_LENGTH,
         "keep_recent_messages_count": DEFAULT_KEEP_RECENT_MESSAGES_COUNT,
     }
+
+
+def _normalize_config_payload(config: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    normalized = dict(config)
+    changed = False
+    valid_keys = set(_default_config_values().keys())
+
+    removable_keys = [key for key in normalized if key not in valid_keys]
+    for key in removable_keys:
+        normalized.pop(key, None)
+        changed = True
+
+    return normalized, changed
 
 
 def _parse_string_map(value: Any, field_name: str) -> dict[str, str]:
@@ -259,8 +266,9 @@ def load_agent_config(config_path: Path = CONFIG_PATH) -> AgentConfig:
     if not isinstance(config, dict):
         raise ValueError("配置文件格式错误：根节点必须是对象。")
 
+    config, normalized_changed = _normalize_config_payload(config)
     defaults = _default_config_values()
-    has_missing_defaults = False
+    has_missing_defaults = normalized_changed
     for key, default_value in defaults.items():
         if key not in config:
             config[key] = default_value
@@ -273,11 +281,7 @@ def load_agent_config(config_path: Path = CONFIG_PATH) -> AgentConfig:
     model = config.get("model", DEFAULT_MODEL)
     effort = config.get("effort", "medium")
     token_threshold = config.get("token_threshold", DEFAULT_TOKEN_THRESHOLD)
-    keep_recent_tool_outputs = config.get("keep_recent_tool_outputs", DEFAULT_KEEP_RECENT_TOOL_OUTPUTS)
-    min_compact_output_length = config.get("min_compact_output_length", DEFAULT_MIN_COMPACT_OUTPUT_LENGTH)
-    keep_recent_messages_count = config.get("keep_recent_messages_count")
-    if keep_recent_messages_count is None:
-        keep_recent_messages_count = config.get("keep_recent_messages_days", DEFAULT_KEEP_RECENT_MESSAGES_COUNT)
+    keep_recent_messages_count = config.get("keep_recent_messages_count", DEFAULT_KEEP_RECENT_MESSAGES_COUNT)
 
     if not isinstance(api_key, str) or not api_key.strip():
         raise ValueError(
@@ -291,10 +295,6 @@ def load_agent_config(config_path: Path = CONFIG_PATH) -> AgentConfig:
         raise ValueError("配置项 effort 必须是 none、minimal、low、medium、high或xhigh")
     if not isinstance(token_threshold, int) or token_threshold <= 0:
         raise ValueError("配置项 token_threshold 必须是正整数。")
-    if not isinstance(keep_recent_tool_outputs, int) or keep_recent_tool_outputs < 0:
-        raise ValueError("配置项 keep_recent_tool_outputs 必须是非负整数。")
-    if not isinstance(min_compact_output_length, int) or min_compact_output_length < 0:
-        raise ValueError("配置项 min_compact_output_length 必须是非负整数。")
     if not isinstance(keep_recent_messages_count, int) or keep_recent_messages_count < 0:
         raise ValueError("配置项 keep_recent_messages_count 必须是非负整数。")
 
@@ -305,8 +305,6 @@ def load_agent_config(config_path: Path = CONFIG_PATH) -> AgentConfig:
         model=model.strip(),
         effort=effort.strip(),
         token_threshold=token_threshold,
-        keep_recent_tool_outputs=keep_recent_tool_outputs,
-        min_compact_output_length=min_compact_output_length,
         keep_recent_messages_count=keep_recent_messages_count,
         mcp_servers=load_mcp_servers(),
     )
