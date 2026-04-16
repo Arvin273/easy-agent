@@ -310,11 +310,17 @@ def _run_text_prompt(
 
     @bindings.add("up", eager=True)
     def _history_previous(event: object) -> None:
+        if _ensure_valid_completion_navigation(buffer, completer):
+            buffer.complete_previous()
+            return
         _cancel_completion_safely(buffer)
         event.current_buffer.auto_up(count=event.arg)
 
     @bindings.add("down", eager=True)
     def _history_next(event: object) -> None:
+        if _ensure_valid_completion_navigation(buffer, completer):
+            buffer.complete_next()
+            return
         _cancel_completion_safely(buffer)
         event.current_buffer.auto_down(count=event.arg)
 
@@ -340,7 +346,6 @@ def _run_text_prompt(
 
     @bindings.add("enter", eager=True)
     def _submit_input(event: object) -> None:
-        stripped_text = buffer.text.strip()
         completion_state = buffer.complete_state
         current_completion = None
         if completion_state is not None:
@@ -348,11 +353,6 @@ def _run_text_prompt(
             completions = completion_state.completions
             if idx is not None and 0 <= idx < len(completions):
                 current_completion = completions[idx]
-        if _is_dollar_skill_selection_context(buffer):
-            matches = completer.get_matches(stripped_text)
-            if any(command == stripped_text for command, _ in matches):
-                event.app.exit(result=buffer.text)
-                return
         if current_completion is not None:
             if _is_prefix_input_context(buffer):
                 _apply_selected_completion(buffer, current_completion)
