@@ -120,8 +120,10 @@ def run_grep(arguments: dict[str, Any]) -> str:
         raise ValueError("head_limit 参数不能小于 0。")
     if offset is not None and offset < 0:
         raise ValueError("offset 参数不能小于 0。")
-    if file_type is not None and (not isinstance(file_type, str) or not file_type.strip()):
-        raise ValueError("type 参数必须是非空字符串。")
+    if file_type is not None and not isinstance(file_type, str):
+        raise ValueError("type 参数必须是字符串。")
+    if isinstance(file_type, str):
+        file_type = file_type.strip() or None
 
     show_line_numbers_value = _parse_optional_bool(show_line_numbers, "-n")
     case_insensitive_value = _parse_optional_bool(case_insensitive, "-i")
@@ -257,7 +259,11 @@ TOOL_DEF = {
                 "type": "boolean",
             },
             "type": {
-                "description": "要搜索的文件类型（rg --type）。常见类型：js、py、rust、go、java 等。对标准文件类型来说，比 include 更高效。",
+                "description": (
+                    "要搜索的文件类型（rg --type）,"
+                    "允许值必须来自当前内置 ripgrep 的类型列表。"
+                    "常用类型：py、python、js、ts、typescript、json、yaml、toml、md、markdown、txt、html、css、sh、xml、sql、go、java、rust、c、cpp、docker、make等..."
+                ),
                 "type": "string",
             },
             "head_limit": {
