@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import os
 import platform
+import shutil
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -28,6 +31,19 @@ def _decode_output(data: bytes) -> str:
     return data.decode("utf-8", errors="replace")
 
 
+def _ensure_executable(path: Path) -> bool:
+    if sys.platform == "win32":
+        return True
+    if os.access(path, os.X_OK):
+        return True
+    try:
+        current_mode = path.stat().st_mode
+        path.chmod(current_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    except OSError:
+        return False
+    return os.access(path, os.X_OK)
+
+
 def _resolve_rg_executable() -> str | None:
     base_dir = PACKAGE_ROOT / "vendor" / "ripgrep"
     machine = platform.machine().lower()
@@ -47,7 +63,12 @@ def _resolve_rg_executable() -> str | None:
         candidate = base_dir / f"{arch}-linux" / "rg"
 
     if candidate.is_file():
-        return str(candidate.resolve())
+        if _ensure_executable(candidate):
+            return str(candidate.resolve())
+
+    system_rg = shutil.which("rg")
+    if system_rg:
+        return system_rg
     return None
 
 
