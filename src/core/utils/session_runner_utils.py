@@ -5,6 +5,7 @@ import sys
 from typing import Any
 
 from core.tools.bash import TOOL_NAME as BASH_TOOL_NAME
+from core.utils.history_items import build_function_call_output_item
 
 
 def normalize_tool_result(result: Any) -> str:
@@ -108,10 +109,4 @@ def repair_incomplete_tool_history(history: list[dict[str, Any] | Any]) -> None:
     for call_id in pending_call_ids:
         if call_id in completed_call_ids:
             continue
-        history.append(
-            {
-                "type": "function_call_output",
-                "call_id": call_id,
-                "output": "工具已中断",
-            }
-        )
+        history.append(build_function_call_output_item(call_id, "工具已中断"))

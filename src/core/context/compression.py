@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 from openai import OpenAI
+from core.utils.history_items import build_user_message
 
 
 def _count_chars(value: Any) -> int:
@@ -201,17 +202,4 @@ def compact_history(
         "[Conversation compressed]\n\n"
         f"{summary}"
     )
-    return [
-        *preserved_system,
-        {
-            "type": "message",
-            "role": "user",
-            "content": [
-                {
-                    "type": "input_text",
-                    "text": compressed_note,
-                }
-            ],
-        },
-        *preserved_recent,
-    ]
+    return [*preserved_system, build_user_message(compressed_note), *preserved_recent]

@@ -11,9 +11,15 @@ from typing import Any, Callable
 from openai import OpenAI
 
 import core.tools.bash as bash_tool
+from core.tools.bash import TOOL_NAME as BASH_TOOL_NAME
 from core.context.compression import (
     compact_history,
     estimate_tokens,
+)
+from core.utils.history_items import (
+    build_assistant_message,
+    build_function_call_item,
+    build_function_call_output_item,
 )
 from core.utils.session_runner_utils import (
     format_tool_output_preview,
@@ -54,7 +60,6 @@ def stream_response_with_working_counter(
     active_block_key: dict[str, str | None] = {"value": None}
     active_block_kind: dict[str, str | None] = {"value": None}
     block_line_started: dict[str, bool] = {"value": False}
-    streamed_reasoning_items: dict[str, dict[str, Any]] = {}
     streamed_message_items: dict[str, dict[str, Any]] = {}
     streamed_tool_calls: list[Any] = []
     stream_lock = threading.Lock()
@@ -129,8 +134,9 @@ def stream_response_with_working_counter(
                         sys.stdout.write(f"{body_color}{part}{RESET}")
                     block_line_started["value"] = True
                     continue
-                if part:
-                    block_line_started["value"] = True
+                if is_new_line and (index < len(parts) - 1 or not delta.endswith("\n")):
+                    sys.stdout.write(f"{body_color}{continuation_prefix}{RESET}")
+                block_line_started["value"] = False
             if delta.endswith("\n"):
                 block_line_started["value"] = False
             sys.stdout.flush()
@@ -151,7 +157,6 @@ def stream_response_with_working_counter(
                     input=history,
                     tools=tools,
                     reasoning={"effort": effort, "summary": "auto"},
-                    store=True,
                     prompt_cache_key=prompt_cache_key,
             ) as stream:
                 active_stream["value"] = stream
@@ -188,65 +193,10 @@ def stream_response_with_working_counter(
                             "reasoning",
                             getattr(event, "delta", ""),
                         )
-                        item_id = str(getattr(event, "item_id", "") or "")
-                        summary_index = int(getattr(event, "summary_index", 0) or 0)
-                        reasoning_item = streamed_reasoning_items.setdefault(
-                            item_id,
-                            {
-                                "type": "reasoning",
-                                "summary_parts": {},
-                                "content_parts": {},
-                                "content": None,
-                                "encrypted_content": None,
-                                "output_index": int(getattr(event, "output_index", 0) or 0),
-                            },
-                        )
-                        summary_parts = reasoning_item["summary_parts"]
-                        summary_parts[summary_index] = str(summary_parts.get(summary_index, "")) + str(
-                            getattr(event, "delta", "")
-                        )
-                    elif event_type == "response.reasoning_text.delta":
-                        item_id = str(getattr(event, "item_id", "") or "")
-                        content_index = int(getattr(event, "content_index", 0) or 0)
-                        reasoning_item = streamed_reasoning_items.setdefault(
-                            item_id,
-                            {
-                                "type": "reasoning",
-                                "summary_parts": {},
-                                "content_parts": {},
-                                "content": None,
-                                "encrypted_content": None,
-                                "output_index": int(getattr(event, "output_index", 0) or 0),
-                            },
-                        )
-                        content_parts = reasoning_item["content_parts"]
-                        content_parts[content_index] = str(content_parts.get(content_index, "")) + str(
-                            getattr(event, "delta", "")
-                        )
                     elif event_type == "response.output_item.added":
                         item = getattr(event, "item", None)
                         if getattr(item, "type", None) == "reasoning":
-                            item_id = str(getattr(item, "id", "") or getattr(event, "output_index", ""))
-                            reasoning_item = streamed_reasoning_items.setdefault(
-                                item_id,
-                                {
-                                    "type": "reasoning",
-                                    "summary_parts": {},
-                                    "content_parts": {},
-                                    "content": None,
-                                    "encrypted_content": None,
-                                    "output_index": int(getattr(event, "output_index", 0) or 0),
-                                },
-                            )
-                            reasoning_item["encrypted_content"] = getattr(item, "encrypted_content", None)
-                            content = getattr(item, "content", None)
-                            if content is not None:
-                                reasoning_item["content"] = [
-                                    content_item.model_dump(exclude_none=False)
-                                    if hasattr(content_item, "model_dump")
-                                    else dict(content_item)
-                                    for content_item in content
-                                ]
+                            continue
                     elif event_type == "response.output_item.done":
                         item = getattr(event, "item", None)
                         if getattr(item, "type", None) == "function_call":
@@ -296,21 +246,6 @@ def stream_response_with_working_counter(
         if "error" in error_holder:
             raise error_holder["error"]
         response_items_to_history: list[dict[str, Any]] = []
-        for reasoning_item in streamed_reasoning_items.values():
-            summary_parts = reasoning_item.pop("summary_parts", {})
-            content_parts = reasoning_item.pop("content_parts", {})
-            reasoning_item["summary"] = [
-                {"type": "summary_text", "text": str(summary_parts[index])}
-                for index in sorted(summary_parts)
-                if str(summary_parts[index])
-            ]
-            if content_parts:
-                reasoning_item["content"] = [
-                    {"type": "reasoning_text", "text": str(content_parts[index])}
-                    for index in sorted(content_parts)
-                    if str(content_parts[index])
-                ]
-            response_items_to_history.append(reasoning_item)
         for message_item in streamed_message_items.values():
             content_parts = message_item.pop("content_parts", {})
             content_text = "".join(
@@ -320,15 +255,8 @@ def stream_response_with_working_counter(
             if content_text:
                 response_items_to_history.append(
                     {
-                        "type": "message",
-                        "role": "assistant",
+                        **build_assistant_message(content_text),
                         "output_index": message_item.get("output_index", 0),
-                        "content": [
-                            {
-                                "type": "output_text",
-                                "text": content_text,
-                            }
-                        ],
                     }
                 )
         response_items_to_history.sort(key=lambda item: int(item.get("output_index", 0)))
@@ -432,11 +360,7 @@ def run_tool_call(
         preview = format_tool_output_preview(str(output), edge_lines=3)
         print_text(Colors.reason, f"{preview}\n")
         print()
-    return {
-        "type": "function_call_output",
-        "call_id": tool_call.call_id,
-        "output": output,
-    }
+    return build_function_call_output_item(tool_call.call_id, output)
 
 
 def run_until_no_tool_call(
@@ -478,14 +402,7 @@ def run_until_no_tool_call(
 
         history.extend(response_items)
         for item in streamed_tool_calls:
-            history.append(
-                {
-                    "type": "function_call",
-                    "name": item.name,
-                    "arguments": item.arguments,
-                    "call_id": item.call_id,
-                }
-            )
+            history.append(build_function_call_item(item.name, item.arguments, item.call_id))
         if not streamed_tool_calls:
             return
 

@@ -1,5 +1,6 @@
+from hashlib import sha256
+from pathlib import Path
 from typing import Any
-from uuid import uuid4
 
 import httpx
 from openai import OpenAI
@@ -12,6 +13,7 @@ from core.terminal.prompt_ui import read_user_input
 from core.commands import get_slash_command_descriptions, handle_slash_command
 from core.tools import ToolRegistry
 from core.tools.bash import interrupt_running_bash, run_bash
+from core.utils.history_items import build_user_message
 
 SKILL_MANAGER = SkillManager()
 TOOL_REGISTRY = ToolRegistry(SKILL_MANAGER)
@@ -81,6 +83,11 @@ def handle_shell_command(query: str) -> None:
         interrupt_running_bash()
         print_text(Colors.reason, "命令已中断\n\n")
 
+
+def build_session_prompt_cache_key(workdir: Path) -> str:
+    workdir_text = workdir.resolve().as_posix().lower()
+    return f"ea-workdir-{sha256(workdir_text.encode('utf-8')).hexdigest()[:24]}"
+
 def main() -> None:
     try:
         config = load_agent_config()
@@ -94,7 +101,7 @@ def main() -> None:
         http_client=httpx.Client(verify=False),
     )
     try:
-        session_prompt_cache_key = uuid4().hex
+        session_prompt_cache_key = build_session_prompt_cache_key(SKILL_MANAGER.workdir)
         command_descriptions = get_prompt_command_descriptions()
 
         print_startup_banner(
@@ -156,18 +163,7 @@ def main() -> None:
                 handle_shell_command(query)
                 continue
 
-            history.append(
-                {
-                    "type": "message",
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "input_text",
-                            "text": query,
-                        }
-                    ],
-                }
-            )
+            history.append(build_user_message(query))
             for error in TOOL_REGISTRY.mcp_registry.errors:
                 print_marked_text(content=error + "\n", marker="■", body_color=Colors.error, marker_color=Colors.error)
             try:
