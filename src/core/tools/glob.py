@@ -4,6 +4,41 @@ from typing import Any
 
 from core.tools.common import WORKDIR, resolve_path
 
+MAX_GLOB_MATCHES = 200
+MAX_GLOB_OUTPUT_CHARS = 12000
+
+
+def _format_matches(matches: list[str]) -> str:
+    if not matches:
+        return "(no matches)"
+
+    limited_matches = matches[:MAX_GLOB_MATCHES]
+    output_lines: list[str] = []
+    current_chars = 0
+    truncated_by_chars = False
+
+    for match in limited_matches:
+        addition = len(match) if not output_lines else len(match) + 1
+        if current_chars + addition > MAX_GLOB_OUTPUT_CHARS:
+            truncated_by_chars = True
+            break
+        output_lines.append(match)
+        current_chars += addition
+
+    if not output_lines:
+        first = limited_matches[0]
+        if len(first) > MAX_GLOB_OUTPUT_CHARS:
+            clipped = first[:MAX_GLOB_OUTPUT_CHARS]
+            return f"{clipped}\n... [glob output truncated]"
+        output_lines.append(first)
+
+    truncated = len(matches) > len(output_lines) or truncated_by_chars
+    output = "\n".join(output_lines)
+    if truncated:
+        hidden = len(matches) - len(output_lines)
+        return f"{output}\n... [glob output truncated, {hidden} more matches]"
+    return output
+
 
 def run_glob(arguments: dict[str, Any]) -> str:
     pattern = arguments.get("pattern")
@@ -26,7 +61,7 @@ def run_glob(arguments: dict[str, Any]) -> str:
 
         if not matches:
             return "(no matches)"
-        return "\n".join(str(match) for match in matches)
+        return _format_matches([str(match) for match in matches])
     except Exception as exc:
         return f"Error: {exc}"
 
