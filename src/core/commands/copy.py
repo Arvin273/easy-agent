@@ -24,6 +24,19 @@ def _find_last_assistant_message(history: list[dict[str, Any] | Any] | None) -> 
         content = item.get("content")
         if isinstance(content, str) and content.strip():
             return content
+        if isinstance(content, list):
+            chunks: list[str] = []
+            for content_item in content:
+                if not isinstance(content_item, dict):
+                    continue
+                if content_item.get("type") != "output_text":
+                    continue
+                text = content_item.get("text")
+                if isinstance(text, str) and text:
+                    chunks.append(text)
+            combined = "".join(chunks).strip()
+            if combined:
+                return combined
     return None
 
 

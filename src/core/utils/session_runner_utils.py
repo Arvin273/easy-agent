@@ -4,6 +4,8 @@ import json
 import sys
 from typing import Any
 
+from core.tools.bash import TOOL_NAME as BASH_TOOL_NAME
+
 
 def normalize_tool_result(result: Any) -> str:
     if isinstance(result, str):
@@ -38,6 +40,20 @@ def format_tool_output_preview(output: str, edge_lines: int = 4) -> str:
     hidden = len(lines) - max_lines
     preview_lines = lines[:edge_lines] + [f"... ({hidden} more lines)"] + lines[-edge_lines:]
     return "\n".join(preview_lines)
+
+
+def should_print_tool_output_preview(tool_name: str, output: str) -> bool:
+    # Bash 只在错误、无输出或转后台时打印摘要，避免正常命令刷屏。
+    stripped = str(output).strip()
+    if not stripped:
+        return False
+    if tool_name != BASH_TOOL_NAME:
+        return True
+    return (
+            stripped.startswith("Error:")
+            or stripped == "(no output)"
+            or stripped.startswith("Started background bash task ")
+    )
 
 
 def read_cancel_key_nonblocking() -> str | None:

@@ -156,7 +156,18 @@ def main() -> None:
                 handle_shell_command(query)
                 continue
 
-            history.append({"role": "user", "content": query})
+            history.append(
+                {
+                    "type": "message",
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": query,
+                        }
+                    ],
+                }
+            )
             for error in TOOL_REGISTRY.mcp_registry.errors:
                 print_marked_text(content=error + "\n", marker="■", body_color=Colors.error, marker_color=Colors.error)
             try:

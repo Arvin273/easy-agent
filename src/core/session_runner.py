@@ -11,7 +11,6 @@ from typing import Any, Callable
 from openai import OpenAI
 
 import core.tools.bash as bash_tool
-from core.tools.bash import TOOL_NAME as BASH_TOOL_NAME
 from core.context.compression import (
     compact_history,
     estimate_tokens,
@@ -21,6 +20,7 @@ from core.utils.session_runner_utils import (
     normalize_tool_result,
     read_cancel_key_nonblocking,
     repair_incomplete_tool_history,
+    should_print_tool_output_preview,
 )
 from core.terminal.cli_output import (
     Colors,
@@ -31,39 +31,50 @@ from core.terminal.cli_output import (
     print_text,
 )
 
-
-def _should_print_tool_output_preview(tool_name: str, output: str) -> bool:
-    # Bash 只在错误、无输出或转后台时打印摘要，避免正常命令刷屏。
-    stripped = str(output).strip()
-    if not stripped:
-        return False
-    if tool_name != BASH_TOOL_NAME:
-        return True
-    return (
-            stripped.startswith("Error:")
-            or stripped == "(no output)"
-            or stripped.startswith("Started background bash task ")
-    )
-
-
-def run_with_working_counter(callable_obj: Callable[[], Any]) -> tuple[Any | None, int, bool]:
-    # 在请求模型期间持续刷新状态，并支持 Esc/Ctrl+C 取消本轮生成。
+def stream_response_with_working_counter(
+        client: OpenAI,
+        model: str,
+        effort: str,
+        prompt_cache_key: str,
+        history: list[dict[str, Any] | Any],
+        tools: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[Any], bool]:
+    # 以流式方式消费模型输出，实时打印文本增量，同时保留中断能力。
     done_event = threading.Event()
     cancel_event = threading.Event()
+    output_started_event = threading.Event()
     working_color = Colors.reason
-    result_holder: dict[str, Any] = {}
     error_holder: dict[str, BaseException] = {}
     previous_sigint_handler: Any = None
     sigint_handler_installed = False
     status_line_rendered = False
     started_at = time.monotonic()
     last_rendered_elapsed = -1
+    active_stream: dict[str, Any] = {}
+    active_block_key: dict[str, str | None] = {"value": None}
+    active_block_kind: dict[str, str | None] = {"value": None}
+    block_line_started: dict[str, bool] = {"value": False}
+    streamed_reasoning_items: dict[str, dict[str, Any]] = {}
+    streamed_message_items: dict[str, dict[str, Any]] = {}
+    streamed_tool_calls: list[Any] = []
+    stream_lock = threading.Lock()
 
     def _elapsed_seconds() -> int:
         return max(1, int(time.monotonic() - started_at))
 
+    def _clear_status_line() -> None:
+        nonlocal status_line_rendered
+        if status_line_rendered and sys.stdout.isatty():
+            print("\x1b[1A\x1b[2K\r", end="", flush=True)
+            status_line_rendered = False
+            return
+        columns = shutil.get_terminal_size(fallback=(100, 20)).columns
+        print(f"\r{' ' * max(1, columns - 1)}\r", end="", flush=True)
+
     def _render_status() -> None:
         nonlocal status_line_rendered, last_rendered_elapsed
+        if output_started_event.is_set():
+            return
         elapsed = _elapsed_seconds()
         if elapsed == last_rendered_elapsed:
             return
@@ -80,12 +91,175 @@ def run_with_working_counter(callable_obj: Callable[[], Any]) -> tuple[Any | Non
             return
         print(f"\r{status_text}", end="", flush=True)
 
+    def _switch_stream_block(block_key: str, block_kind: str) -> None:
+        if active_block_key["value"] == block_key:
+            return
+        if active_block_key["value"] is not None:
+            sys.stdout.write("\n\n")
+        marker_color = Colors.reason if block_kind == "reasoning" else Colors.ai
+        body_color = Colors.reason if block_kind == "reasoning" else Colors.ai
+        marker_prefix = "• "
+        sys.stdout.write(
+            f"{marker_color}{marker_prefix}{RESET}"
+        )
+        sys.stdout.flush()
+        active_block_key["value"] = block_key
+        active_block_kind["value"] = block_kind
+        block_line_started["value"] = True
+
+    def _append_stream_delta(block_key: str, block_kind: str, delta: str) -> None:
+        if not delta:
+            return
+        with stream_lock:
+            if not output_started_event.is_set():
+                output_started_event.set()
+                _clear_status_line()
+            _switch_stream_block(block_key, block_kind)
+            body_color = Colors.reason if block_kind == "reasoning" else Colors.ai
+            continuation_prefix = "  "
+            parts = delta.split("\n")
+            for index, part in enumerate(parts):
+                is_new_line = index > 0
+                if is_new_line:
+                    sys.stdout.write("\n")
+                if part:
+                    if is_new_line or not block_line_started["value"]:
+                        sys.stdout.write(f"{body_color}{continuation_prefix}{part}{RESET}")
+                    else:
+                        sys.stdout.write(f"{body_color}{part}{RESET}")
+                    block_line_started["value"] = True
+                    continue
+                if part:
+                    block_line_started["value"] = True
+            if delta.endswith("\n"):
+                block_line_started["value"] = False
+            sys.stdout.flush()
+
+    def _finalize_stream_output() -> None:
+        with stream_lock:
+            if active_block_key["value"] is not None:
+                sys.stdout.write("\n\n")
+                sys.stdout.flush()
+                active_block_key["value"] = None
+                active_block_kind["value"] = None
+                block_line_started["value"] = False
+
     def request_worker() -> None:
         try:
-            result_holder["value"] = callable_obj()
+            with client.responses.stream(
+                    model=model,
+                    input=history,
+                    tools=tools,
+                    reasoning={"effort": effort, "summary": "auto"},
+                    store=True,
+                    prompt_cache_key=prompt_cache_key,
+            ) as stream:
+                active_stream["value"] = stream
+                for event in stream:
+                    if cancel_event.is_set():
+                        break
+                    event_type = getattr(event, "type", "")
+                    if event_type == "response.output_text.delta":
+                        message_key = f"message:{getattr(event, 'item_id', '')}:{getattr(event, 'content_index', 0)}"
+                        _append_stream_delta(
+                            message_key,
+                            "message",
+                            getattr(event, "delta", ""),
+                        )
+                        item_id = str(getattr(event, "item_id", "") or "")
+                        content_index = int(getattr(event, "content_index", 0) or 0)
+                        message_item = streamed_message_items.setdefault(
+                            item_id,
+                            {
+                                "type": "message",
+                                "role": "assistant",
+                                "content_parts": {},
+                                "output_index": int(getattr(event, "output_index", 0) or 0),
+                            },
+                        )
+                        content_parts = message_item["content_parts"]
+                        content_parts[content_index] = str(content_parts.get(content_index, "")) + str(
+                            getattr(event, "delta", "")
+                        )
+                    elif event_type == "response.reasoning_summary_text.delta":
+                        reasoning_key = f"reasoning:{getattr(event, 'item_id', '')}:{getattr(event, 'summary_index', 0)}"
+                        _append_stream_delta(
+                            reasoning_key,
+                            "reasoning",
+                            getattr(event, "delta", ""),
+                        )
+                        item_id = str(getattr(event, "item_id", "") or "")
+                        summary_index = int(getattr(event, "summary_index", 0) or 0)
+                        reasoning_item = streamed_reasoning_items.setdefault(
+                            item_id,
+                            {
+                                "type": "reasoning",
+                                "summary_parts": {},
+                                "content_parts": {},
+                                "content": None,
+                                "encrypted_content": None,
+                                "output_index": int(getattr(event, "output_index", 0) or 0),
+                            },
+                        )
+                        summary_parts = reasoning_item["summary_parts"]
+                        summary_parts[summary_index] = str(summary_parts.get(summary_index, "")) + str(
+                            getattr(event, "delta", "")
+                        )
+                    elif event_type == "response.reasoning_text.delta":
+                        item_id = str(getattr(event, "item_id", "") or "")
+                        content_index = int(getattr(event, "content_index", 0) or 0)
+                        reasoning_item = streamed_reasoning_items.setdefault(
+                            item_id,
+                            {
+                                "type": "reasoning",
+                                "summary_parts": {},
+                                "content_parts": {},
+                                "content": None,
+                                "encrypted_content": None,
+                                "output_index": int(getattr(event, "output_index", 0) or 0),
+                            },
+                        )
+                        content_parts = reasoning_item["content_parts"]
+                        content_parts[content_index] = str(content_parts.get(content_index, "")) + str(
+                            getattr(event, "delta", "")
+                        )
+                    elif event_type == "response.output_item.added":
+                        item = getattr(event, "item", None)
+                        if getattr(item, "type", None) == "reasoning":
+                            item_id = str(getattr(item, "id", "") or getattr(event, "output_index", ""))
+                            reasoning_item = streamed_reasoning_items.setdefault(
+                                item_id,
+                                {
+                                    "type": "reasoning",
+                                    "summary_parts": {},
+                                    "content_parts": {},
+                                    "content": None,
+                                    "encrypted_content": None,
+                                    "output_index": int(getattr(event, "output_index", 0) or 0),
+                                },
+                            )
+                            reasoning_item["encrypted_content"] = getattr(item, "encrypted_content", None)
+                            content = getattr(item, "content", None)
+                            if content is not None:
+                                reasoning_item["content"] = [
+                                    content_item.model_dump(exclude_none=False)
+                                    if hasattr(content_item, "model_dump")
+                                    else dict(content_item)
+                                    for content_item in content
+                                ]
+                    elif event_type == "response.output_item.done":
+                        item = getattr(event, "item", None)
+                        if getattr(item, "type", None) == "function_call":
+                            streamed_tool_calls.append(item)
+                if cancel_event.is_set():
+                    try:
+                        stream.close()
+                    except Exception:
+                        pass
         except BaseException as exc:  # noqa: BLE001
             error_holder["error"] = exc
         finally:
+            _finalize_stream_output()
             done_event.set()
 
     request_thread = threading.Thread(target=request_worker, daemon=True)
@@ -106,79 +280,73 @@ def run_with_working_counter(callable_obj: Callable[[], Any]) -> tuple[Any | Non
         _render_status()
         while True:
             if cancel_event.is_set():
-                return None, _elapsed_seconds(), True
+                stream = active_stream.get("value")
+                if stream is not None:
+                    try:
+                        stream.close()
+                    except Exception:
+                        pass
+                return [], [], True
             if done_event.wait(0.1):
                 break
             _render_status()
             if read_cancel_key_nonblocking() == "esc":
-                return None, _elapsed_seconds(), True
+                cancel_event.set()
 
         if "error" in error_holder:
             raise error_holder["error"]
-        return result_holder.get("value"), _elapsed_seconds(), False
+        response_items_to_history: list[dict[str, Any]] = []
+        for reasoning_item in streamed_reasoning_items.values():
+            summary_parts = reasoning_item.pop("summary_parts", {})
+            content_parts = reasoning_item.pop("content_parts", {})
+            reasoning_item["summary"] = [
+                {"type": "summary_text", "text": str(summary_parts[index])}
+                for index in sorted(summary_parts)
+                if str(summary_parts[index])
+            ]
+            if content_parts:
+                reasoning_item["content"] = [
+                    {"type": "reasoning_text", "text": str(content_parts[index])}
+                    for index in sorted(content_parts)
+                    if str(content_parts[index])
+                ]
+            response_items_to_history.append(reasoning_item)
+        for message_item in streamed_message_items.values():
+            content_parts = message_item.pop("content_parts", {})
+            content_text = "".join(
+                str(content_parts[index])
+                for index in sorted(content_parts)
+            )
+            if content_text:
+                response_items_to_history.append(
+                    {
+                        "type": "message",
+                        "role": "assistant",
+                        "output_index": message_item.get("output_index", 0),
+                        "content": [
+                            {
+                                "type": "output_text",
+                                "text": content_text,
+                            }
+                        ],
+                    }
+                )
+        response_items_to_history.sort(key=lambda item: int(item.get("output_index", 0)))
+        for item in response_items_to_history:
+            item.pop("output_index", None)
+        return response_items_to_history, streamed_tool_calls, False
     finally:
         if sigint_handler_installed:
             try:
                 signal.signal(signal.SIGINT, previous_sigint_handler)
             except Exception:
                 pass
-        if status_line_rendered and sys.stdout.isatty():
-            print("\x1b[1A\x1b[2K\r", end="", flush=True)
-        else:
-            columns = shutil.get_terminal_size(fallback=(100, 20)).columns
-            print(f"\r{' ' * max(1, columns - 1)}\r", end="", flush=True)
-
-
-def print_response_items(
-        response: Any,
-        history: list[Any],
-) -> list[Any]:
-    # 统一打印模型输出，并把 assistant 消息和 function_call 写回 history。
-    tool_calls: list[Any] = []
-
-    for item in response.output:
-        if item.type != "reasoning":
-            continue
-        for summary_item in item.summary or []:
-            text = getattr(summary_item, "text", "")
-            if text:
-                print_marked_text(
-                    f"Thinking: {text}",
-                    marker="•",
-                    marker_color=Colors.reason,
-                    body_color=Colors.reason,
-                )
-
-    for item in response.output:
-        if item.type != "message":
-            continue
-        for content_item in item.content:
-            if getattr(content_item, "type", None) != "output_text":
-                continue
-            text = getattr(content_item, "text", "")
-            if text:
-                print_marked_text(
-                    text,
-                    marker="•",
-                    marker_color=Colors.ai,
-                    body_color=Colors.ai,
-                )
-                history.append({"role": "assistant", "content": text})
-
-    for item in response.output:
-        if item.type == "function_call":
-            tool_calls.append(item)
-            history.append(
-                {
-                    "type": "function_call",
-                    "name": item.name,
-                    "arguments": item.arguments,
-                    "call_id": item.call_id,
-                }
-            )
-
-    return tool_calls
-
+        if not output_started_event.is_set():
+            if status_line_rendered and sys.stdout.isatty():
+                print("\x1b[1A\x1b[2K\r", end="", flush=True)
+            else:
+                columns = shutil.get_terminal_size(fallback=(100, 20)).columns
+                print(f"\r{' ' * max(1, columns - 1)}\r", end="", flush=True)
 
 def run_tool_call(
         tool_call: Any,
@@ -260,7 +428,7 @@ def run_tool_call(
             result = result_holder.get("value")
 
     output = normalize_tool_result(result)
-    if _should_print_tool_output_preview(tool_name, str(output)):
+    if should_print_tool_output_preview(tool_name, str(output)):
         preview = format_tool_output_preview(str(output), edge_lines=3)
         print_text(Colors.reason, f"{preview}\n")
         print()
@@ -296,29 +464,33 @@ def run_until_no_tool_call(
             )
             print_text(Colors.reason, "Compacted\n\n")
 
-        response, elapsed_seconds, cancelled = run_with_working_counter(
-            lambda: client.responses.create(
-                model=model,
-                input=history,
-                tools=tools,
-                reasoning={"effort": effort, "summary": "auto"},
-                store=True,
-                prompt_cache_key=prompt_cache_key,
-            )
+        response_items, streamed_tool_calls, cancelled = stream_response_with_working_counter(
+            client=client,
+            model=model,
+            effort=effort,
+            prompt_cache_key=prompt_cache_key,
+            history=history,
+            tools=tools,
         )
         if cancelled:
             print_text(Colors.error, "[Interrupted] 已中断本次生成。\n\n")
             return
 
-        tool_calls = print_response_items(
-            response,
-            history,
-        )
-        if not tool_calls:
+        history.extend(response_items)
+        for item in streamed_tool_calls:
+            history.append(
+                {
+                    "type": "function_call",
+                    "name": item.name,
+                    "arguments": item.arguments,
+                    "call_id": item.call_id,
+                }
+            )
+        if not streamed_tool_calls:
             return
 
         tool_outputs: list[dict[str, str]] = []
-        for tool_call in tool_calls:
+        for tool_call in streamed_tool_calls:
             tool_outputs.append(run_tool_call(tool_call, handlers))
 
         history.extend(tool_outputs)

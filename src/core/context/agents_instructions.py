@@ -10,7 +10,7 @@ def _read_agents_file(path: Path) -> str | None:
         if not path.exists() or not path.is_file():
             return None
         content = path.read_text(encoding="utf-8").strip()
-        return content or None
+        return content
     except Exception:
         return None
 
@@ -24,9 +24,12 @@ def load_agents_system_messages() -> list[dict[str, str]]:
 
     for label, path in candidates:
         content = _read_agents_file(path)
-        if not content:
+        if content is None:
             continue
-        sections.append(f"{label}：\n{content}")
+        if content:
+            sections.append(f"{label}：\n{content}")
+        else:
+            sections.append(f"{label}：空")
 
     if not sections:
         return []

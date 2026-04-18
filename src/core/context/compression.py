@@ -37,6 +37,17 @@ def estimate_tokens(messages: list[dict[str, Any] | Any]) -> int:
             total += _count_chars(item.get("output"))
             continue
 
+        if item_type == "reasoning":
+            total += _count_chars(item.get("id"))
+            total += _count_chars(item.get("summary"))
+            total += _count_chars(item.get("content"))
+            continue
+
+        if item_type == "message":
+            total += _count_chars(item.get("role"))
+            total += _count_chars(item.get("content"))
+            continue
+
         total += _count_chars(item.get("role"))
         total += _count_chars(item.get("content"))
 
@@ -190,4 +201,17 @@ def compact_history(
         "[Conversation compressed]\n\n"
         f"{summary}"
     )
-    return [*preserved_system, {"role": "user", "content": compressed_note}, *preserved_recent]
+    return [
+        *preserved_system,
+        {
+            "type": "message",
+            "role": "user",
+            "content": [
+                {
+                    "type": "input_text",
+                    "text": compressed_note,
+                }
+            ],
+        },
+        *preserved_recent,
+    ]
