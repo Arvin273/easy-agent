@@ -19,7 +19,7 @@ def _count_chars(value: Any) -> int:
     return len(str(value))
 
 
-def estimate_tokens(messages: list[dict[str, Any] | Any]) -> int:
+def estimate_tokens(messages: list[dict[str, Any] | Any], instructions: str) -> int:
     total = 0
     for item in messages:
         if not isinstance(item, dict):
@@ -51,6 +51,8 @@ def estimate_tokens(messages: list[dict[str, Any] | Any]) -> int:
 
         total += _count_chars(item.get("role"))
         total += _count_chars(item.get("content"))
+
+    total += _count_chars(instructions)
 
     return total
 
@@ -89,12 +91,12 @@ def _extract_output_text(response: Any) -> str:
     return "\n".join(chunks).strip()
 
 
-def _leading_system_messages(history: list[dict[str, Any] | Any]) -> list[dict[str, Any]]:
+def _leading_developer_messages(history: list[dict[str, Any] | Any]) -> list[dict[str, Any]]:
     preserved: list[dict[str, Any]] = []
     for item in history:
         if not isinstance(item, dict):
             break
-        if item.get("role") != "system":
+        if item.get("role") != "developer":
             break
         preserved.append(item)
     return preserved
@@ -173,15 +175,15 @@ def compact_history(
     focus: str | None = None,
     keep_recent_messages_count: int = 0,
 ) -> list[dict[str, Any]]:
-    preserved_system = _leading_system_messages(history)
-    non_system_messages: list[dict[str, Any] | Any] = history[len(preserved_system):]
+    preserved_developer = _leading_developer_messages(history)
+    non_developer_messages: list[dict[str, Any] | Any] = history[len(preserved_developer):]
     to_compact, preserved_recent = _split_with_safe_recent_messages(
-        non_system_messages,
+        non_developer_messages,
         keep_recent_messages_count=keep_recent_messages_count,
     )
 
     if not to_compact:
-        return [*preserved_system, *preserved_recent]
+        return [*preserved_developer, *preserved_recent]
 
     prompt = compact_prompt(to_compact, focus=focus)
     summary = "No summary generated."
@@ -202,4 +204,4 @@ def compact_history(
         "[Conversation compressed]\n\n"
         f"{summary}"
     )
-    return [*preserved_system, build_user_message(compressed_note), *preserved_recent]
+    return [*preserved_developer, build_user_message(compressed_note), *preserved_recent]

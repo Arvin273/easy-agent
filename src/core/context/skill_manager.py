@@ -127,7 +127,7 @@ class SkillManager:
         self._skills_cache = result
         return list(result)
 
-    def build_system_section(self) -> str:
+    def build_developer_section(self) -> str:
         skills = self.discover_skills()
         if not skills:
             return ""

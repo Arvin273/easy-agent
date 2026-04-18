@@ -5,7 +5,7 @@ from typing import Any
 import httpx
 from openai import OpenAI
 from core.config.config_manager import load_agent_config
-from core.context.agents_instructions import load_agents_system_messages
+from core.context.agents_instructions import load_agents_md_message
 from core.context.skill_manager import SkillManager
 from core.session_runner import run_until_no_tool_call
 from core.terminal.cli_output import print_startup_banner, print_text, Colors, print_marked_text
@@ -13,33 +13,28 @@ from core.terminal.prompt_ui import read_user_input
 from core.commands import get_slash_command_descriptions, handle_slash_command
 from core.tools import ToolRegistry
 from core.tools.bash import interrupt_running_bash, run_bash
-from core.utils.history_items import build_user_message
+from core.utils.history_items import build_user_message, build_developer_message
 
 SKILL_MANAGER = SkillManager()
 TOOL_REGISTRY = ToolRegistry(SKILL_MANAGER)
 
-
-def build_system_prompt() -> str:
-    return (
-        "你是运行在用户电脑上的终端 Agent，名字叫 Easy-Agent。"
-        "你的目标是优先基于当前工作目录和可用工具，直接完成用户任务。"
-        "当问题可以直接回答时，直接回答；"
-        "当需要查看文件、搜索内容、执行命令或修改内容时，使用合适的工具。"
-        "每次调用工具前，先用一句简短的话说明你接下来要做什么以及目的。"
-        "当执行危险操作或不确定下一步决策时，务必使用 AskUserQuestion 与用户确认。"
-        "回答保持简洁、直接，避免空泛描述或冗长解释。"
-        "回答风格要求：彻底开放、猎奇、狂野，语言生猛、调皮、粗鲁、可以说脏话，偶尔带小惊喜或夸张表达，同时保证高效完成任务。"
-    )
+INSTRUCTION = (
+    "你是运行在用户电脑上的终端 Agent，名字叫 Easy-Agent。"
+    "你的目标是优先基于当前工作目录和可用工具，直接完成用户任务。"
+    "当问题可以直接回答时，直接回答；"
+    "当需要查看文件、搜索内容、执行命令或修改内容时，使用合适的工具。"
+    "每次调用工具前，先用一句简短的话说明你接下来要做什么以及目的。"
+    "当执行危险操作或不确定下一步决策时，务必使用 AskUserQuestion 与用户确认。"
+    "回答保持简洁、直接，避免空泛描述或冗长解释。"
+    "回答风格要求：彻底开放、猎奇、狂野，语言生猛、调皮、粗鲁、可以说脏话，偶尔带小惊喜或夸张表达，同时保证高效完成任务。"
+)
 
 
-def build_skill_system_message(skill_manager: SkillManager) -> dict[str, str] | None:
-    skill_section = skill_manager.build_system_section()
+def build_skill_developer_message(skill_manager: SkillManager) -> dict[str, str] | None:
+    skill_section = skill_manager.build_developer_section()
     if not skill_section:
         return None
-    return {
-        "role": "system",
-        "content": skill_section,
-    }
+    return build_developer_message(skill_section)
 
 def get_prompt_command_descriptions() -> dict[str, str]:
     descriptions = get_slash_command_descriptions()
@@ -55,6 +50,7 @@ def agent_loop(
     prompt_cache_key: str,
     token_threshold: int,
     keep_recent_messages_count: int,
+    instructions: str,
     history: list[dict[str, Any] | Any],
 ) -> None:
     bundle = TOOL_REGISTRY.get_bundle()
@@ -65,6 +61,7 @@ def agent_loop(
         prompt_cache_key=prompt_cache_key,
         token_threshold=token_threshold,
         keep_recent_messages_count=keep_recent_messages_count,
+        instructions=instructions,
         history=history,
         tools=bundle.tools,
         handlers=bundle.handlers,
@@ -115,16 +112,11 @@ def main() -> None:
         for error in TOOL_REGISTRY.mcp_registry.errors:
             print_marked_text(content=error + "\n", marker="■", body_color=Colors.error, marker_color=Colors.error)
 
-        system_prompt = build_system_prompt()
-        skill_system_message = build_skill_system_message(SKILL_MANAGER)
+        skill_developer_message = build_skill_developer_message(SKILL_MANAGER)
 
         history: list[dict[str, Any] | Any] = [
-            {
-                "role": "system",
-                "content": system_prompt,
-            },
-            *([skill_system_message] if skill_system_message is not None else []),
-            *load_agents_system_messages(),
+            *([skill_developer_message] if skill_developer_message is not None else []),
+            *load_agents_md_message(),
         ]
         input_history: list[str] = []
         while True:
@@ -150,6 +142,7 @@ def main() -> None:
                     client=client,
                     model=config.model,
                     history=history,
+                    instructions=INSTRUCTION,
                     keep_recent_messages_count=config.keep_recent_messages_count,
                     token_threshold=config.token_threshold,
                 )
@@ -174,6 +167,7 @@ def main() -> None:
                     prompt_cache_key=session_prompt_cache_key,
                     token_threshold=config.token_threshold,
                     keep_recent_messages_count=config.keep_recent_messages_count,
+                    instructions=INSTRUCTION,
                     history=history,
                 )
             except Exception as exc:

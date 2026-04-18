@@ -43,6 +43,7 @@ def stream_response_with_working_counter(
         effort: str,
         prompt_cache_key: str,
         history: list[dict[str, Any] | Any],
+        instructions: str,
         tools: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], list[Any], bool]:
     # 以流式方式消费模型输出，实时打印文本增量，同时保留中断能力。
@@ -155,6 +156,7 @@ def stream_response_with_working_counter(
             with client.responses.stream(
                     model=model,
                     input=history,
+                    instructions=instructions,
                     tools=tools,
                     reasoning={"effort": effort, "summary": "auto"},
                     prompt_cache_key=prompt_cache_key,
@@ -370,6 +372,7 @@ def run_until_no_tool_call(
         prompt_cache_key: str,
         token_threshold: int,
         keep_recent_messages_count: int,
+        instructions: str,
         history: list[dict[str, Any] | Any],
         tools: list[dict[str, Any]],
         handlers: dict[str, Callable[[dict[str, Any]], Any]],
@@ -378,7 +381,7 @@ def run_until_no_tool_call(
     while True:
         repair_incomplete_tool_history(history)
         # Auto-compaction by token threshold.
-        if estimate_tokens(history) > token_threshold:
+        if estimate_tokens(history, instructions) > token_threshold:
             print_text(Colors.reason, "Compacting...\n")
             history[:] = compact_history(
                 client=client,
@@ -394,6 +397,7 @@ def run_until_no_tool_call(
             effort=effort,
             prompt_cache_key=prompt_cache_key,
             history=history,
+            instructions=instructions,
             tools=tools,
         )
         if cancelled:

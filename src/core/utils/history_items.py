@@ -15,6 +15,18 @@ def build_user_message(text: str) -> dict[str, Any]:
         ],
     }
 
+def build_developer_message(text: str) -> dict[str, Any]:
+    return {
+        "type": "message",
+        "role": "developer",
+        "content": [
+            {
+                "type": "input_text",
+                "text": text,
+            }
+        ],
+    }
+
 
 def build_assistant_message(text: str) -> dict[str, Any]:
     return {

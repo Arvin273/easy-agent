@@ -28,6 +28,7 @@ class SlashCommandContext:
     client: OpenAI | None
     model: str | None
     history: list[dict[str, Any] | Any] | None
+    instructions: str | None
     keep_recent_messages_count: int
     token_threshold: int
     args: list[str]
@@ -90,7 +91,7 @@ def _handle_compact(context: SlashCommandContext) -> bool:
 
 
 def _handle_tokens(context: SlashCommandContext) -> bool:
-    return tokens_command.handle(context.history, context.token_threshold)
+    return tokens_command.handle(history=context.history, token_threshold=context.token_threshold, instructions=context.instructions)
 
 
 def _handle_exit(_: SlashCommandContext) -> bool:
@@ -125,6 +126,7 @@ def handle_slash_command(
     history: list[dict[str, Any] | Any] | None = None,
     keep_recent_messages_count: int = 0,
     token_threshold: int = 0,
+    instructions: str | None = None,
 ) -> bool:
     parts = query.strip().split()
     if not parts:
@@ -141,6 +143,7 @@ def handle_slash_command(
             keep_recent_messages_count=keep_recent_messages_count,
             token_threshold=token_threshold,
             args=parts[1:],
+            instructions=instructions
         )
         return handler(context)
     print_marked_text(content=f"Unknown slash command: {query}。输入 /help 查看可用命令。\n\n", marker="■", body_color=Colors.error, marker_color=Colors.error)
