@@ -186,7 +186,6 @@ class SkillManager:
                     payload = {
                         "meta": {
                             "skill_name": skill.name,
-                            "skill_directory_name": skill.directory_name,
                             "skill_root": str(skill.directory),
                             "skill_file": str(skill.skill_file),
                         },
