@@ -4,7 +4,7 @@ from typing import Any
 
 import httpx
 from openai import OpenAI
-from core.config.config_manager import load_agent_config
+from core.config.config_manager import AgentConfig, load_agent_config
 from core.context.agents_instructions import load_agents_md_message
 from core.context.skill_manager import SkillManager
 from core.session_runner import run_until_no_tool_call
@@ -85,6 +85,17 @@ def build_session_prompt_cache_key(workdir: Path) -> str:
     workdir_text = workdir.resolve().as_posix().lower()
     return f"ea-workdir-{sha256(workdir_text.encode('utf-8')).hexdigest()[:24]}"
 
+
+def reload_runtime_config_if_requested(config: AgentConfig, should_reload_config: bool) -> AgentConfig:
+    if not should_reload_config:
+        return config
+    try:
+        return load_agent_config()
+    except Exception as exc:
+        print_marked_text(content=f"重新加载配置失败: {exc}\n\n", marker="■", body_color=Colors.error, marker_color=Colors.error)
+        return config
+
+
 def main() -> None:
     try:
         config = load_agent_config()
@@ -135,7 +146,7 @@ def main() -> None:
                 continue
 
             if query.startswith("/"):
-                should_exit = handle_slash_command(
+                result = handle_slash_command(
                     query,
                     SKILL_MANAGER,
                     TOOL_REGISTRY,
@@ -146,7 +157,11 @@ def main() -> None:
                     keep_recent_messages_count=config.keep_recent_messages_count,
                     token_threshold=config.token_threshold,
                 )
-                if should_exit:
+                config = reload_runtime_config_if_requested(
+                    config=config,
+                    should_reload_config=result.should_reload_config,
+                )
+                if result.should_exit:
                     break
                 for error in TOOL_REGISTRY.mcp_registry.errors:
                     print_marked_text(content=error + "\n", marker="■", body_color=Colors.error, marker_color=Colors.error)

@@ -34,6 +34,12 @@ class SlashCommandContext:
     args: list[str]
 
 
+@dataclass(frozen=True)
+class SlashCommandResult:
+    should_exit: bool = False
+    should_reload_config: bool = False
+
+
 SLASH_COMMANDS = {
     config_command.COMMAND: config_command.DESCRIPTION,
     clear_command.COMMAND: clear_command.DESCRIPTION,
@@ -127,10 +133,10 @@ def handle_slash_command(
     keep_recent_messages_count: int = 0,
     token_threshold: int = 0,
     instructions: str | None = None,
-) -> bool:
+) -> SlashCommandResult:
     parts = query.strip().split()
     if not parts:
-        return False
+        return SlashCommandResult()
     command = parts[0].lower()
     handler = COMMAND_HANDLERS.get(command)
     if handler is not None:
@@ -145,6 +151,9 @@ def handle_slash_command(
             args=parts[1:],
             instructions=instructions
         )
-        return handler(context)
+        return SlashCommandResult(
+            should_exit=handler(context),
+            should_reload_config=(command == model_command.COMMAND),
+        )
     print_marked_text(content=f"Unknown slash command: {query}。输入 /help 查看可用命令。\n\n", marker="■", body_color=Colors.error, marker_color=Colors.error)
-    return False
+    return SlashCommandResult()
