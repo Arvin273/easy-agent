@@ -187,8 +187,8 @@ class SkillManager:
                         "meta": {
                             "skill_name": skill.name,
                             "skill_directory_name": skill.directory_name,
-                            "skill_root": skill.directory.as_posix(),
-                            "skill_file": skill.skill_file.as_posix(),
+                            "skill_root": str(skill.directory),
+                            "skill_file": str(skill.skill_file),
                         },
                         "content": content,
                     }

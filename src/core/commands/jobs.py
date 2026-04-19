@@ -3,10 +3,10 @@ from __future__ import annotations
 from datetime import datetime
 
 from core.terminal.cli_output import Colors, print_text, print_title_and_content, print_marked_text
-from core.tools.bash import get_background_bash_tasks
+from core.tools.shell import get_background_shell_tasks
 
 COMMAND = "/jobs"
-DESCRIPTION = "查看后台 Bash 任务"
+DESCRIPTION = "查看后台 Shell 任务"
 
 
 def _format_timestamp(value: str | None) -> str:
@@ -42,7 +42,7 @@ def handle(args: list[str]) -> bool:
             return False
         task_id = arg
 
-    tasks = get_background_bash_tasks(task_id=task_id, include_output=include_output)
+    tasks = get_background_shell_tasks(task_id=task_id, include_output=include_output)
     if status_filter is not None:
         tasks = [task for task in tasks if str(task.get("status")) in status_filter]
 
@@ -51,7 +51,7 @@ def handle(args: list[str]) -> bool:
         return False
 
     if not tasks:
-        print_text(Colors.reason, "当前没有匹配的后台 Bash 任务。\n\n")
+        print_text(Colors.reason, "当前没有匹配的后台 Shell 任务。\n\n")
         return False
 
     if task_id is None and not include_output:

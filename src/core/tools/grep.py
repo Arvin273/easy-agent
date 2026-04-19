@@ -202,7 +202,7 @@ TOOL_DEF = {
     "description": (
         "一个基于 ripgrep 的强大搜索工具\n\n"
         "  用法：\n"
-        "  - 搜索任务一律使用 Grep。绝不要通过 Bash 命令调用 `grep` 或 `rg`。Grep 工具已经针对正确的权限和访问做了优化。\n"
+        "  - 搜索任务一律使用 Grep。绝不要通过 Shell 命令调用 `grep` 或 `rg`。Grep 工具已经针对正确的权限和访问做了优化。\n"
         "  - 支持完整正则表达式语法（例如：\"log.*Error\"、\"function\\\\s+\\\\w+\"）\n"
         "  - 可通过 glob 参数（例如：\"*.js\"、\"**/*.tsx\"）或 type 参数（例如：\"js\"、\"py\"、\"rust\"）过滤文件\n"
         "  - 输出模式：\"content\" 显示匹配行，\"files_with_matches\" 仅显示文件路径（默认），\"count\" 显示匹配计数\n"

@@ -7,15 +7,15 @@ from core.config.config_manager import AgentConfig
 from core.tools.ask_user_question import TOOL_DEF as ASK_USER_QUESTION_TOOL_DEF
 from core.tools.ask_user_question import TOOL_HANDLER as ASK_USER_QUESTION_TOOL_HANDLER
 from core.tools.ask_user_question import TOOL_NAME as ASK_USER_QUESTION_TOOL_NAME
-from core.tools.bash import TOOL_DEF as BASH_TOOL_DEF
-from core.tools.bash import TOOL_HANDLER as BASH_TOOL_HANDLER
-from core.tools.bash import TOOL_NAME as BASH_TOOL_NAME
-from core.tools.bash import JOBS_TOOL_DEF as BASH_JOBS_TOOL_DEF
-from core.tools.bash import JOBS_TOOL_HANDLER as BASH_JOBS_TOOL_HANDLER
-from core.tools.bash import JOBS_TOOL_NAME as BASH_JOBS_TOOL_NAME
-from core.tools.bash import STOP_TOOL_DEF as BASH_STOP_TOOL_DEF
-from core.tools.bash import STOP_TOOL_HANDLER as BASH_STOP_TOOL_HANDLER
-from core.tools.bash import STOP_TOOL_NAME as BASH_STOP_TOOL_NAME
+from core.tools.shell import TOOL_DEF as SHELL_TOOL_DEF
+from core.tools.shell import TOOL_HANDLER as SHELL_TOOL_HANDLER
+from core.tools.shell import TOOL_NAME as SHELL_TOOL_NAME
+from core.tools.shell import JOBS_TOOL_DEF as SHELL_JOBS_TOOL_DEF
+from core.tools.shell import JOBS_TOOL_HANDLER as SHELL_JOBS_TOOL_HANDLER
+from core.tools.shell import JOBS_TOOL_NAME as SHELL_JOBS_TOOL_NAME
+from core.tools.shell import STOP_TOOL_DEF as SHELL_STOP_TOOL_DEF
+from core.tools.shell import STOP_TOOL_HANDLER as SHELL_STOP_TOOL_HANDLER
+from core.tools.shell import STOP_TOOL_NAME as SHELL_STOP_TOOL_NAME
 from core.tools.common import WORKDIR
 from core.tools.edit_file import TOOL_DEF as EDIT_FILE_TOOL_DEF
 from core.tools.edit_file import TOOL_HANDLER as EDIT_FILE_TOOL_HANDLER
@@ -38,9 +38,9 @@ from core.mcp import MCPRegistry
 
 
 TOOL_HANDLERS = {
-    BASH_TOOL_NAME: BASH_TOOL_HANDLER,
-    BASH_JOBS_TOOL_NAME: BASH_JOBS_TOOL_HANDLER,
-    BASH_STOP_TOOL_NAME: BASH_STOP_TOOL_HANDLER,
+    SHELL_TOOL_NAME: SHELL_TOOL_HANDLER,
+    SHELL_JOBS_TOOL_NAME: SHELL_JOBS_TOOL_HANDLER,
+    SHELL_STOP_TOOL_NAME: SHELL_STOP_TOOL_HANDLER,
     READ_FILE_TOOL_NAME: READ_FILE_TOOL_HANDLER,
     WRITE_FILE_TOOL_NAME: WRITE_FILE_TOOL_HANDLER,
     EDIT_FILE_TOOL_NAME: EDIT_FILE_TOOL_HANDLER,
@@ -50,9 +50,9 @@ TOOL_HANDLERS = {
 }
 
 TOOLS = [
-    BASH_TOOL_DEF,
-    BASH_JOBS_TOOL_DEF,
-    BASH_STOP_TOOL_DEF,
+    SHELL_TOOL_DEF,
+    SHELL_JOBS_TOOL_DEF,
+    SHELL_STOP_TOOL_DEF,
     READ_FILE_TOOL_DEF,
     WRITE_FILE_TOOL_DEF,
     EDIT_FILE_TOOL_DEF,

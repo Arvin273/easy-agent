@@ -5,8 +5,8 @@ Easy Agent 是一个运行在终端里的轻量级智能助手，面向日常开
 ## 功能概览
 
 - 在命令行中直接与 Agent 对话
-- 内置文件读取、搜索、编辑、Bash 等工具
-- Bash 工具支持后台任务查询、取消，以及超时后的输出预览
+- 内置文件读取、搜索、编辑、Shell 等工具
+- Shell 工具会按系统选择 shell：Windows 使用 PowerShell，Linux/macOS 使用 Bash，并支持后台任务查询、取消，以及超时后的输出预览
 - 支持项目级和用户级 `skills`
 - 支持自动会话压缩与 token 估算
 - 支持通过 `stdio`、`sse`、`streamable_http` 接入 MCP Server
@@ -41,7 +41,7 @@ ea
 ea
 ```
 
-Agent 会把当前目录当作工作目录。例如你在 `D:\code\project\demo` 下启动，后续文件工具和 Bash 默认都在这个目录范围内工作。
+Agent 会把当前目录当作工作目录。例如你在 `D:\code\project\demo` 下启动，后续文件工具和 Shell 默认都在这个目录范围内工作。
 
 ## 首次配置
 

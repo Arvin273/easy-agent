@@ -10,8 +10,8 @@ from typing import Any, Callable
 
 from openai import OpenAI
 
-import core.tools.bash as bash_tool
-from core.tools.bash import TOOL_NAME as BASH_TOOL_NAME
+import core.tools.shell as shell_tool
+from core.tools.shell import TOOL_NAME as SHELL_TOOL_NAME
 from core.context.compression import (
     compact_history,
     estimate_tokens,
@@ -26,7 +26,6 @@ from core.utils.session_runner_utils import (
     normalize_tool_result,
     read_cancel_key_nonblocking,
     repair_incomplete_tool_history,
-    should_print_tool_output_preview,
 )
 from core.terminal.cli_output import (
     Colors,
@@ -335,8 +334,8 @@ def run_tool_call(
                 cancel_requested = sigint_received or read_cancel_key_nonblocking() == "esc"
                 if not cancel_requested:
                     continue
-                if tool_name == BASH_TOOL_NAME:
-                    bash_tool.interrupt_running_bash()
+                if tool_name == SHELL_TOOL_NAME:
+                    shell_tool.interrupt_running_shell()
                     print_text(Colors.reason, "工具已中断\n\n")
                     interrupted = True
                     break
@@ -358,10 +357,9 @@ def run_tool_call(
             result = result_holder.get("value")
 
     output = normalize_tool_result(result)
-    if should_print_tool_output_preview(tool_name, str(output)):
-        preview = format_tool_output_preview(str(output), edge_lines=3)
-        print_text(Colors.reason, f"{preview}\n")
-        print()
+    preview = format_tool_output_preview(str(output), edge_lines=3)
+    print_text(Colors.reason, f"{preview}\n")
+    print()
     return build_function_call_output_item(tool_call.call_id, output)
 
 

@@ -1,3 +1,4 @@
+import platform
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
@@ -12,22 +13,28 @@ from core.terminal.cli_output import print_startup_banner, print_text, Colors, p
 from core.terminal.prompt_ui import read_user_input
 from core.commands import get_slash_command_descriptions, handle_slash_command
 from core.tools import ToolRegistry
-from core.tools.bash import interrupt_running_bash, run_bash
+from core.tools.shell import interrupt_running_shell, run_shell
 from core.utils.history_items import build_user_message, build_developer_message
 
 SKILL_MANAGER = SkillManager()
 TOOL_REGISTRY = ToolRegistry(SKILL_MANAGER)
 
-INSTRUCTION = (
-    "你是运行在用户电脑上的终端 Agent，名字叫 Easy-Agent。"
-    "你的目标是优先基于当前工作目录和可用工具，直接完成用户任务。"
-    "当问题可以直接回答时，直接回答；"
-    "当需要查看文件、搜索内容、执行命令或修改内容时，使用合适的工具。"
-    "每次调用工具前，先用一句简短的话说明你接下来要做什么以及目的。"
-    "当执行危险操作或不确定下一步决策时，务必使用 AskUserQuestion 与用户确认。"
-    "回答保持简洁、直接，避免空泛描述或冗长解释。"
-    "回答风格要求：彻底开放、猎奇、狂野，语言生猛、调皮、粗鲁、可以说脏话，偶尔带小惊喜或夸张表达，同时保证高效完成任务。"
-)
+def build_instruction() -> str:
+    system_name = platform.system() or "Unknown"
+    return (
+        "你是运行在用户电脑上的终端 Agent，名字叫 Easy-Agent。"
+        f"当前系统环境是 {system_name}。"
+        "你的目标是优先基于当前工作目录和可用工具，直接完成用户任务。"
+        "当问题可以直接回答时，直接回答；"
+        "当需要查看文件、搜索内容、执行命令或修改内容时，使用合适的工具。"
+        "每次调用工具前，先用一句简短的话说明你接下来要做什么以及目的。"
+        "当执行危险操作或不确定下一步决策时，务必使用 AskUserQuestion 与用户确认。"
+        "回答保持简洁、直接，避免空泛描述或冗长解释。"
+        "回答风格要求：彻底开放、猎奇、狂野，语言生猛、调皮、粗鲁、可以说脏话，偶尔带小惊喜或夸张表达，同时保证高效完成任务。"
+    )
+
+
+INSTRUCTION = build_instruction()
 
 
 def build_skill_developer_message(skill_manager: SkillManager) -> dict[str, str] | None:
@@ -75,9 +82,9 @@ def handle_shell_command(query: str) -> None:
         return
 
     try:
-        run_bash({"command": command, "stream_full_output": True})
+        run_shell({"command": command, "stream_full_output": True})
     except KeyboardInterrupt:
-        interrupt_running_bash()
+        interrupt_running_shell()
         print_text(Colors.reason, "命令已中断\n\n")
 
 
@@ -115,7 +122,7 @@ def main() -> None:
         print_startup_banner(
             model=config.model,
             effort=config.effort,
-            directory=SKILL_MANAGER.workdir.as_posix(),
+            directory=SKILL_MANAGER.workdir,
             command_descriptions=command_descriptions
         )
 
